@@ -5,7 +5,23 @@ import torch.nn as nn
 import transformers
 from transformers import BertModel, BertForMaskedLM
 
+class TrajectoryModel(nn.Module):
 
+    def __init__(self, state_dim, act_dim, max_length=None):
+        super().__init__()
+
+        self.state_dim = state_dim
+        self.act_dim = act_dim
+        self.max_length = max_length
+
+    def forward(self, states, actions, rewards, masks=None, attention_mask=None):
+        # "masked" tokens or unspecified inputs can be passed in as None
+        return None, None, None
+
+    def get_action(self, states, actions, rewards, **kwargs):
+        # these will come as tensors on the correct device
+        return torch.zeros_like(actions[-1])
+        
 class DecisionBERT(TrajectoryModel):
     """
     This model uses BERT to model (Return_1, state_1, action_1, Return_2, state_2, ...)
@@ -92,8 +108,8 @@ class DecisionBERT(TrajectoryModel):
         x = x.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
 
         # get predictions
-        return_preds = self.predict_return(x[:,2])  # predict next return given state and action
-        state_preds = self.predict_state(x[:,2])    # predict next state given state and action
-        action_preds = self.predict_action(x[:,1])  # predict next action given state
+        return_preds = self.predict_return(x[:,0])  # predict return given return
+        state_preds = self.predict_state(x[:,1])    # predict state given state 
+        action_preds = self.predict_action(x[:,2])  # predict action given state
 
-        stacked_labels = ?
+        return state_preds, action_preds, return_preds
