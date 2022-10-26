@@ -4,6 +4,10 @@ import torch
 import time
 
 
+MASKED_STATE = 
+MASKED_ACTION = 
+MASKED_REWARD = 
+
 class MaskTrainer():
 
     def __init__(self, model, optimizer, 
@@ -83,6 +87,9 @@ class MaskTrainer():
     def train_step(self):
         states, actions, rewards, dones, \
             rtg, timesteps, attention_mask = self.get_batch(self.batch_size)
+        
+        masked_token = ['state', 'action', ]
+        masked_token = MASK_
         action_target = torch.clone(actions)
 
         state_preds, action_preds, reward_preds = self.model.forward(
@@ -107,3 +114,5 @@ class MaskTrainer():
             self.diagnostics['training/action_error'] = torch.mean((action_preds-action_target)**2).detach().cpu().item()
 
         return loss.detach().cpu().item()
+
+
