@@ -35,12 +35,14 @@ class DecisionBERT(TrajectoryModel):
             max_length=None,
             max_ep_len=4096,
             action_tanh=True,
+            timestep_encoding=True,
             **kwargs
     ):
         super().__init__(state_dim, act_dim, max_length=max_length)
 
         self.hidden_size = hidden_size
-        config = transformers.GPT2Config(
+        self.timestep_encoding = timestep_encoding
+        config = transformers.BertConfig(
             vocab_size=1,  # doesn't matter -- we don't use the vocab
             n_embd=hidden_size,
             **kwargs
@@ -48,11 +50,15 @@ class DecisionBERT(TrajectoryModel):
 
         # note: the only difference between this GPT2Model and the default Huggingface version
         # is that the positional embeddings are removed (since we'll add those ourselves)
-        # self.transformer = BertForMaskedLM(config) ## without use the pretrained model
+        ## self.bert = BertForMaskedLM(config) ## without use the pretrained model
         self.bert = BertModel(config, add_pooling_layer=False)
 
-        self.embed_timestep = nn.Embedding(max_ep_len, hidden_size) ## got it
+        # Set up positional encoder
+        self.pos_encoder = PositionalEncoding(hidden_size, dropout=0.1) ## UniMASK mentioned use position encoder works better even for DT
+        if self.timestep_encoding:
+            self.embed_timestep = nn.Embedding(max_ep_len, hidden_size) ## got it
         self.embed_return = nn.Linear(1, hidden_size)
+        self.embed_reward = nn.Linear(1, hidden_size)
         self.embed_state = nn.Linear(self.state_dim, hidden_size) 
         self.embed_action = nn.Linear(self.act_dim, hidden_size)
 
@@ -76,12 +82,15 @@ class DecisionBERT(TrajectoryModel):
         state_embeddings = self.embed_state(states) ## (batch_size, seq_length, self.hidden_size)
         action_embeddings = self.embed_action(actions)
         returns_embeddings = self.embed_return(returns_to_go)
+        rewards_embeddings = self.embed_reward(rewards)
         time_embeddings = self.embed_timestep(timesteps)
 
+        if self.timestep_encoding:
         # time embeddings are treated similar to positional embeddings
-        state_embeddings = state_embeddings + time_embeddings
-        action_embeddings = action_embeddings + time_embeddings
-        returns_embeddings = returns_embeddings + time_embeddings
+            state_embeddings = state_embeddings + time_embeddings
+            action_embeddings = action_embeddings + time_embeddings
+            returns_embeddings = returns_embeddings + time_embeddings
+            rewards_embeddings = rewards_embeddings + time_embeddings
 
         # this makes the sequence look like (R_1, s_1, a_1, R_2, s_2, a_2, ...)
         # which works nice in an autoregressive sense since states predict actions
@@ -113,3 +122,23 @@ class DecisionBERT(TrajectoryModel):
         action_preds = self.predict_action(x[:,2])  # predict action given state
 
         return state_preds, action_preds, return_preds
+
+import math
+class PositionalEncoding(nn.Module):
+    """Taken from the PyTorch transformers tutorial"""
+
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+        x = x + self.pe[: x.size(0), :]
+        return self.dropout(x)

@@ -30,3 +30,8 @@ python experiment.py --env hopper --dataset medium --model_type dt
 ```
 
 Adding `-w True` will log results to Weights and Biases.
+
+## My example
+```
+python experiment.py --env halfcheetah --model_type de
+```

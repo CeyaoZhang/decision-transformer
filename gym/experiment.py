@@ -10,10 +10,12 @@ import sys
 
 from decision_transformer.evaluation.evaluate_episodes import evaluate_episode, evaluate_episode_rtg
 from decision_transformer.models.decision_transformer import DecisionTransformer
+from decision_transformer.models.decision_bert import DecisionBERT ##
 from decision_transformer.models.mlp_bc import MLPBCModel
 from decision_transformer.training.act_trainer import ActTrainer
 from decision_transformer.training.seq_trainer import SequenceTrainer
-
+from decision_transformer.training.mask_trainer import MaskTrainer ##
+from decision_transformer.training.mask_batches import RandomPred
 
 def discount_cumsum(x, gamma):
     discount_cumsum = np.zeros_like(x)
@@ -125,7 +127,7 @@ def experiment(
 
         s, a, r, d, rtg, timesteps, mask = [], [], [], [], [], [], []
         for i in range(batch_size):
-            traj = trajectories[int(sorted_inds[batch_inds[i]])]
+            traj = trajectories[int(sorted_inds[batch_inds[i]])] ## all the data from here !!
             si = random.randint(0, traj['rewards'].shape[0] - 1)
 
             # get sequences from dataset
@@ -228,6 +230,21 @@ def experiment(
             hidden_size=variant['embed_dim'],
             n_layer=variant['n_layer'],
         )
+    elif model_type == 'de':
+        model = DecisionBERT(
+            state_dim=state_dim,
+            act_dim=act_dim,
+            max_length=K,
+            max_ep_len=max_ep_len,
+            hidden_size=variant['embed_dim'],
+            num_hidden_layers=variant['n_layer'],
+            num_attention_heads=variant['n_head'],
+            intermediate_size=4*variant['embed_dim'],
+            hidden_act=variant['activation_function'],
+            max_position_embeddings=1024,
+            hidden_dropout_prob=variant['dropout'],
+            attention_probs_dropout_prob=variant['dropout'],
+        )
     else:
         raise NotImplementedError
 
@@ -264,6 +281,17 @@ def experiment(
             loss_fn=lambda s_hat, a_hat, r_hat, s, a, r: torch.mean((a_hat - a)**2),
             eval_fns=[eval_episodes(tar) for tar in env_targets],
         )
+    elif model_type == 'de':
+        mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
+        trainer = MaskTrainer(
+            model=model,
+            optimizer=optimizer,
+            batch_size=batch_size,
+            get_batch=get_batch,
+            mask_batch_fn=mask_batch_fn,
+            scheduler=scheduler,
+            eval_fns=[eval_episodes(tar) for tar in env_targets]
+        )
 
     if log_to_wandb:
         wandb.init(
@@ -288,7 +316,7 @@ if __name__ == '__main__':
     parser.add_argument('--K', type=int, default=20)
     parser.add_argument('--pct_traj', type=float, default=1.)
     parser.add_argument('--batch_size', type=int, default=64)
-    parser.add_argument('--model_type', type=str, default='dt')  # dt for decision transformer, bc for behavior cloning
+    parser.add_argument('--model_type', type=str, default='dt')  # dt for decision transformer, bc for behavior cloning, be for decision bert
     parser.add_argument('--embed_dim', type=int, default=128)
     parser.add_argument('--n_layer', type=int, default=3)
     parser.add_argument('--n_head', type=int, default=1)
