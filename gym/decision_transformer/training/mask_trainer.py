@@ -68,8 +68,8 @@ class MaskTrainer():
             rtg, timesteps, attention_mask = self.get_batch(self.batch_size)
 
         ## mask the batch data
-        ## both input_masks and pred_masks are (batch, length)
-        input_masks, pred_masks = self.mask_batch_fn.input_masks, self.mask_batch_fn.get_prediction_masks
+        ## both input_masks and pred_masks are (Batch, Length)
+        input_masks, pred_masks = self.mask_batch_fn.input_masks, self.mask_batch_fn.prediction_masks
         
         states_inputs = states * input_masks["*"]["state"].unsqueeze(2) ## make input_masks (B, L, 1) and will broadcast to states
         actions_inputs = actions * input_masks["*"]["action"].unsqueeze(2)

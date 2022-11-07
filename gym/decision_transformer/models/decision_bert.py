@@ -42,9 +42,14 @@ class DecisionBERT(TrajectoryModel):
 
         self.hidden_size = hidden_size
         self.timestep_encoding = timestep_encoding
+        # config = transformers.GPT2Config(
+        #     vocab_size=1,  # doesn't matter -- we don't use the vocab
+        #     n_embd=hidden_size,
+        #     **kwargs
+        # )
         config = transformers.BertConfig(
             vocab_size=1,  # doesn't matter -- we don't use the vocab
-            n_embd=hidden_size,
+            hidden_size=hidden_size, 
             **kwargs
         )
 
@@ -58,7 +63,7 @@ class DecisionBERT(TrajectoryModel):
         if self.timestep_encoding:
             self.embed_timestep = nn.Embedding(max_ep_len, hidden_size) ## got it
         self.embed_return = nn.Linear(1, hidden_size)
-        self.embed_reward = nn.Linear(1, hidden_size)
+        # self.embed_reward = nn.Linear(1, hidden_size)
         self.embed_state = nn.Linear(self.state_dim, hidden_size) 
         self.embed_action = nn.Linear(self.act_dim, hidden_size)
 
@@ -82,7 +87,7 @@ class DecisionBERT(TrajectoryModel):
         state_embeddings = self.embed_state(states) ## (batch_size, seq_length, self.hidden_size)
         action_embeddings = self.embed_action(actions)
         returns_embeddings = self.embed_return(returns_to_go)
-        rewards_embeddings = self.embed_reward(rewards)
+        # rewards_embeddings = self.embed_reward(rewards)
         time_embeddings = self.embed_timestep(timesteps)
 
         if self.timestep_encoding:
@@ -90,7 +95,7 @@ class DecisionBERT(TrajectoryModel):
             state_embeddings = state_embeddings + time_embeddings
             action_embeddings = action_embeddings + time_embeddings
             returns_embeddings = returns_embeddings + time_embeddings
-            rewards_embeddings = rewards_embeddings + time_embeddings
+            # rewards_embeddings = rewards_embeddings + time_embeddings
 
         # this makes the sequence look like (R_1, s_1, a_1, R_2, s_2, a_2, ...)
         # which works nice in an autoregressive sense since states predict actions
@@ -108,7 +113,7 @@ class DecisionBERT(TrajectoryModel):
         # we feed in the input embeddings (not word indices as in NLP) to the model
         transformer_outputs = self.bert(
             inputs_embeds=stacked_inputs,
-            attention_mask=stacked_attention_mask
+            attention_mask=stacked_attention_mask,
         )
         x = transformer_outputs['last_hidden_state'] ## why still last hidden state
 

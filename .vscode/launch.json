@@ -16,26 +16,17 @@
             ]
         },
         {
-            "name": "gym/experiment",
+            "name": "gym/experiment/de",
             "type": "python",
             "request": "launch",
             "program": "experiment.py",
             "console": "integratedTerminal",
-            "justMyCode": true,
+            "justMyCode": false,
             "args": [
-                "--env", "halfcheetah"
-            ],
-            "cwd": "${workspaceFolder}/gym",
-        },
-        {
-            "name": "gym/main",
-            "type": "python",
-            "request": "launch",
-            "program": "main.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args": [
-                "--env", "halfcheetah"
+                "--env", "halfcheetah",
+                "--batch_size", "2",
+                "--K", "10",
+                "--model_type", "de"
             ],
             "cwd": "${workspaceFolder}/gym",
         }

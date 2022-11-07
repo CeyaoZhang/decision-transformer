@@ -51,7 +51,7 @@ class Batch(ABC):
         # self.seq_len = self.input_data.seq_len
         # self.num_seqs = self.input_data.num_seqs
         self.seq_len = seq_len ## I add
-        self.num_seqs = num_seqs ## I add
+        self.num_seqs = num_seqs ## batch size 
         self.device = device ## I add
 
         self.rtg_masking_type = rtg_masking_type
