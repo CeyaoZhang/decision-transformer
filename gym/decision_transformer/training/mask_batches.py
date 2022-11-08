@@ -135,8 +135,10 @@ class Batch(ABC):
         # For last item prediction, the prediction masks will be exactly the opposite relative to the input masks
         s_mask = 1 - self.input_masks["*"]["state"]
         a_mask = 1 - self.input_masks["*"]["action"]
-        r_mask = 1 - self.input_masks["*"]["rtg"]
-        return {"*": {"state": s_mask.to(self.device), "action": a_mask.to(self.device), "rtg": r_mask.to(self.device)}}
+        rtg_mask = 1 - self.input_masks["*"]["rtg"]
+        r_mask = 1 - self.input_masks["*"]["reward"]
+        return {"*": {"state": s_mask.to(self.device), "action": a_mask.to(self.device), 
+                        "rtg": rtg_mask.to(self.device), "reward": r_mask.to(self.device)}}
 
     @classmethod
     def must_have_size_multiple_of(cls, seq_len):
@@ -161,17 +163,17 @@ class Batch(ABC):
     #     inp, timestep_inp = self.input_data.model_input(self.input_masks)
     #     return inp, timestep_inp
 
-    def empty_input_masks(self):
-        s_in_mask = torch.zeros((self.num_seqs, self.seq_len))
-        act_in_mask = torch.zeros((self.num_seqs, self.seq_len))
-        rtg_in_mask = torch.zeros((self.num_seqs, self.seq_len))
-        return act_in_mask, rtg_in_mask, s_in_mask
+    # def empty_input_masks(self):
+    #     s_in_mask = torch.zeros((self.num_seqs, self.seq_len))
+    #     act_in_mask = torch.zeros((self.num_seqs, self.seq_len))
+    #     rtg_in_mask = torch.zeros((self.num_seqs, self.seq_len))
+    #     return act_in_mask, rtg_in_mask, s_in_mask
 
-    def empty_pred_masks(self):
-        s_mask = torch.zeros_like(self.input_masks["*"]["state"])
-        a_mask = torch.zeros_like(self.input_masks["*"]["action"])
-        r_mask = torch.zeros_like(self.input_masks["*"]["rtg"])
-        return a_mask, r_mask, s_mask
+    # def empty_pred_masks(self):
+    #     s_mask = torch.zeros_like(self.input_masks["*"]["state"])
+    #     a_mask = torch.zeros_like(self.input_masks["*"]["action"])
+    #     r_mask = torch.zeros_like(self.input_masks["*"]["rtg"])
+    #     return a_mask, r_mask, s_mask
 
     # ###############
     # # INPUT UTILS #
@@ -275,7 +277,7 @@ class RandomPred(Batch):
         """
         mask_size = (self.num_seqs, self.seq_len)
         if self.random_mask_p:
-            s_mask, a_mask, rtg_mask = [], [], []
+            s_mask, a_mask, rtg_mask, r_mask = [], [], [], []
             for i in range(self.num_seqs):
                 # NOTE: There are probably more efficient ways to do this.
                 seq_mask_ps = np.random.uniform()
@@ -284,22 +286,29 @@ class RandomPred(Batch):
                 seq_s_mask = np.random.choice([0, 1], p=seq_ps, size=[self.seq_len])
                 seq_a_mask = np.random.choice([0, 1], p=seq_ps, size=[self.seq_len])
                 seq_rtg_mask = np.random.choice([0, 1], p=seq_ps, size=[self.seq_len])
+                seq_r_mask = np.random.choice([0, 1], p=seq_ps, size=[self.seq_len])
 
                 s_mask.append(seq_s_mask)
                 a_mask.append(seq_a_mask)
                 rtg_mask.append(seq_rtg_mask)
+                r_mask.append(seq_r_mask)
 
             s_mask = np.array(s_mask)
             a_mask = np.array(a_mask)
             rtg_mask = np.array(rtg_mask)
+            r_mask = np.array(r_mask)
 
         else:
             s_mask = np.random.choice([0, 1], p=self.mask_probs, size=mask_size)
             a_mask = np.random.choice([0, 1], p=self.mask_probs, size=mask_size)
             rtg_mask = np.random.choice([0, 1], p=self.mask_probs, size=mask_size)
+            r_mask = np.random.choice([0, 1], p=self.mask_probs, size=mask_size)
 
         rtg_mask = self.postprocess_rtg_mask(rtg_mask, self.rtg_masking_type)
-        return {"*": {"state": tt(s_mask).to(self.device), "action": tt(a_mask).to(self.device), "rtg": tt(rtg_mask).to(self.device)}}
+        return {"*": {"state": tt(s_mask).to(self.device), 
+                        "action": tt(a_mask).to(self.device), 
+                            "rtg": tt(rtg_mask).to(self.device),
+                                "reward": tt(r_mask).to(self.device)}}
 
     def get_prediction_masks(self):
         """For item prediction, the prediction masks will be exactly the opposite relative to the input masks"""

@@ -158,10 +158,10 @@ def experiment(
         s = torch.from_numpy(np.concatenate(s, axis=0)).to(dtype=torch.float32, device=device)
         a = torch.from_numpy(np.concatenate(a, axis=0)).to(dtype=torch.float32, device=device)
         r = torch.from_numpy(np.concatenate(r, axis=0)).to(dtype=torch.float32, device=device)
-        d = torch.from_numpy(np.concatenate(d, axis=0)).to(dtype=torch.long, device=device)
+        d = torch.from_numpy(np.concatenate(d, axis=0)).to(dtype=torch.long, device=device) ## ?? torch.int
         rtg = torch.from_numpy(np.concatenate(rtg, axis=0)).to(dtype=torch.float32, device=device)
         timesteps = torch.from_numpy(np.concatenate(timesteps, axis=0)).to(dtype=torch.long, device=device)
-        mask = torch.from_numpy(np.concatenate(mask, axis=0)).to(device=device)
+        mask = torch.from_numpy(np.concatenate(mask, axis=0)).to(device=device) ## ?? torch.float32
 
         return s, a, r, d, rtg, timesteps, mask
 
@@ -244,6 +244,7 @@ def experiment(
             max_position_embeddings=1024,
             hidden_dropout_prob=variant['dropout'],
             attention_probs_dropout_prob=variant['dropout'],
+            timestep_encoding=variant['timestep_encoding'],
         )
     else:
         raise NotImplementedError
@@ -288,9 +289,9 @@ def experiment(
             optimizer=optimizer,
             batch_size=batch_size,
             get_batch=get_batch,
-            mask_batch_fn=mask_batch_fn,
             scheduler=scheduler,
-            eval_fns=[eval_episodes(tar) for tar in env_targets]
+            eval_fns=[eval_episodes(tar) for tar in env_targets],
+            mask_batch_fn=mask_batch_fn,
         )
 
     if log_to_wandb:
@@ -330,6 +331,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_steps_per_iter', type=int, default=10000)
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--log_to_wandb', '-w', type=bool, default=False)
+    parser.add_argument('--timestep_encoding', '-te', type=bool, default=True, help='whether use timestep encoding in the Bert') 
     
     args = parser.parse_args()
 

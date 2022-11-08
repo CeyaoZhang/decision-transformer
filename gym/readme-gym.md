@@ -32,6 +32,10 @@ python experiment.py --env hopper --dataset medium --model_type dt
 Adding `-w True` will log results to Weights and Biases.
 
 ## My example
-```
-python experiment.py --env halfcheetah --model_type de
+```python
+python experiment.py --env halfcheetah --dataset expert --model_type dt -w True
+
+nohup python -u experiment.py --env halfcheetah --dataset expert --model_type de --max_iters 50 -w True > de_halfcheetah_expert_50iter_w.log 2>&1 &   ## cost 24h to 45 iters
+
+nohup python -u experiment.py --env halfcheetah --dataset expert --model_type de --max_iters 50 -w True -te False > de_halfcheetah_expert_50iter_w_teF.log 2>&1 &
 ```

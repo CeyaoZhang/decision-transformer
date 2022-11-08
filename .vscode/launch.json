@@ -16,7 +16,22 @@
             ]
         },
         {
-            "name": "gym/experiment/de",
+            "name": "gym/dt",
+            "type": "python",
+            "request": "launch",
+            "program": "experiment.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--env", "halfcheetah",
+                "--batch_size", "2",
+                "--K", "10",
+                "--model_type", "dt"
+            ],
+            "cwd": "${workspaceFolder}/gym",
+        },
+        {
+            "name": "gym/de",
             "type": "python",
             "request": "launch",
             "program": "experiment.py",
