@@ -244,7 +244,7 @@ def experiment(
             max_position_embeddings=1024,
             hidden_dropout_prob=variant['dropout'],
             attention_probs_dropout_prob=variant['dropout'],
-            timestep_encoding=variant['timestep_encoding'],
+            input_type=variant['input_type']
         )
     else:
         raise NotImplementedError
@@ -331,7 +331,8 @@ if __name__ == '__main__':
     parser.add_argument('--num_steps_per_iter', type=int, default=10000)
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--log_to_wandb', '-w', type=bool, default=False)
-    parser.add_argument('--timestep_encoding', '-te', type=bool, default=True, help='whether use timestep encoding in the Bert') 
+    parser.add_argument('--input_type', '-it', type=str, default='cat', choices=['seq', 'cat'], 
+                            help='input tuple are sequence (s,a,r)+time  or cat(s,a,r)') 
     
     args = parser.parse_args()
 

@@ -31,7 +31,7 @@
             "cwd": "${workspaceFolder}/gym",
         },
         {
-            "name": "gym/de",
+            "name": "gym/de/cat",
             "type": "python",
             "request": "launch",
             "program": "experiment.py",
@@ -41,7 +41,8 @@
                 "--env", "halfcheetah",
                 "--batch_size", "2",
                 "--K", "10",
-                "--model_type", "de"
+                "--model_type", "de",
+                "-it", "cat"
             ],
             "cwd": "${workspaceFolder}/gym",
         }
