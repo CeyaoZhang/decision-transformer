@@ -43,27 +43,29 @@ class DecisionBERT(TrajectoryModel):
             max_ep_len=4096,
             action_tanh=True,
             input_type='cat',
+            device='cuda',
+            time_embed=False,
             **kwargs
     ):
         super().__init__(state_dim, act_dim, max_length=max_length)
 
         self.hidden_size = hidden_size
         self.input_type = input_type
+        self.device=device
+        self.time_embed = time_embed
 
-        # config = transformers.GPT2Config(
-        #     vocab_size=1,  # doesn't matter -- we don't use the vocab
-        #     n_embd=hidden_size,
-        #     **kwargs
-        # )
+        
+        ## since we don't use input_ids but the input_embeds in the Bert, 
+        # the word_embedding is useless and the vocab doesn't matter
         if self.input_type == 'seq':
             config = transformers.BertConfig(
-                vocab_size=1,  # doesn't matter -- we don't use the vocab
+                vocab_size=1,  
                 hidden_size=hidden_size, 
                 **kwargs
             )
         elif self.input_type == 'cat':
             config = transformers.BertConfig(
-                vocab_size=1,  # doesn't matter -- we don't use the vocab
+                vocab_size=1, 
                 hidden_size=3*hidden_size, 
                 **kwargs
             )
@@ -88,7 +90,7 @@ class DecisionBERT(TrajectoryModel):
             #self.predict_return = nn.Linear(hidden_size, 1)
             self.predict_reward = nn.Linear(hidden_size, 1)
             
-            self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden_size))
+            self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden_size).to(self.device))
 
         elif self.input_type == 'cat':
             self.embed_timestep = nn.Embedding(max_ep_len, 3*hidden_size) ## got it
@@ -100,19 +102,23 @@ class DecisionBERT(TrajectoryModel):
             #self.predict_return = nn.Linear(hidden_size, 1)
             self.predict_reward = nn.Linear(3*hidden_size, 1)
             
-            self.cls_token = nn.Parameter(torch.zeros(1, 1, 3*hidden_size))
+            self.cls_token = nn.Parameter(torch.zeros(1, 1, 3*hidden_size).to(self.device))
 
 
-    def forward(self, states, actions, rewards, returns_to_go, timesteps, attention_mask=None, ):
+    def forward(self, states, actions, rewards, returns_to_go, timesteps, attention_mask=None, output_cls=False):
+        '''
+        states (B, L, Ds)
+        attention_mask (B, L) if not None
+        '''
 
         batch_size, seq_length = states.shape[0], states.shape[1]
 
         if attention_mask is None:
-            # attention mask for GPT: 1 if can be attended to, 0 if not
+            # attention mask for Bert: 1 if can be attended to, 0 if not
             attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long)
 
         # embed each modality with a different head
-        state_embeddings = self.embed_state(states) ## (batch_size, seq_length, self.hidden_size)
+        state_embeddings = self.embed_state(states) ## (B, L, Dh self.hidden_size)
         action_embeddings = self.embed_action(actions)
         # returns_embeddings = self.embed_return(returns_to_go)
         rewards_embeddings = self.embed_reward(rewards)
@@ -127,14 +133,14 @@ class DecisionBERT(TrajectoryModel):
                 rewards_embeddings = rewards_embeddings + time_embeddings
         
             ## this makes the sequence look like (s_1, a_1, r_1, s_2, a_2, r_2,...)
+            ## (B, 3*seq, D)
             stacked_inputs = torch.stack(
                 (state_embeddings, action_embeddings, rewards_embeddings), dim=1
             ).permute(0, 2, 1, 3).reshape(batch_size, 3*seq_length, self.hidden_size) 
             
             # append cls token
-            cls_tokens = self.cls_token.expand(batch_size, -1, -1)
+            cls_tokens = self.cls_token.expand(batch_size, -1, -1) ## (Bs, 1, D)
             stacked_inputs = torch.cat((cls_tokens, stacked_inputs), dim=1) # bs * (1+3*seq) * dim
-            
             ## after permute then reshape we can get (st, at, rt)
             stacked_inputs = self.embed_ln(stacked_inputs)
 
@@ -142,20 +148,43 @@ class DecisionBERT(TrajectoryModel):
             # to make the attention mask fit the stacked inputs, have to stack it as well
             
             # append attention mask for cls_token
-            attention_mask = torch.cat([torch.ones(batch_size, 1).cuda(), attention_mask], dim=1)
-            
+            ## (B, 3*L)
             stacked_attention_mask = torch.stack(
                 (attention_mask, attention_mask, attention_mask), dim=1
             ).permute(0, 2, 1).reshape(batch_size, 3*seq_length) 
+            ## (B, 1+3*L)
+            stacked_attention_mask = torch.cat([torch.ones(batch_size, 1).to(self.device), stacked_attention_mask], dim=1)
             
-            # we feed in the input embeddings (not word indices as in NLP) to the model
-            transformer_outputs = self.bert(
-                inputs_embeds=stacked_inputs,
-                attention_mask=stacked_attention_mask,
-            )
-            # drop cls term
-            x = transformer_outputs['last_hidden_state'][:, 1:]
 
+        elif self.input_type == 'cat':
+            ## this makes the sequence look like (cat(s_1, a_1, r_1), cat(s_2, a_2, r_2), ...)
+            stacked_inputs = torch.concat(
+                (state_embeddings, action_embeddings, rewards_embeddings), dim=2
+            )
+            if self.time_embed:
+                time_embeddings = self.embed_timestep(timesteps)
+                stacked_inputs = stacked_inputs + time_embeddings
+            # append cls token
+            cls_tokens = self.cls_token.expand(batch_size, -1, -1) ## (B, 1, 3*D)
+            stacked_inputs = torch.cat((cls_tokens, stacked_inputs), dim=1) # B * (1+seq) * (3*dim)
+            stacked_inputs = self.embed_ln(stacked_inputs)
+        
+            # add mask for cls token
+            ## (B, 1+L)
+            stacked_attention_mask = torch.cat([torch.ones(batch_size, 1).to(self.device), attention_mask], dim=1)
+
+
+ 
+        # we feed in the input embeddings (not word indices as in NLP) to the model
+        transformer_outputs = self.bert(
+            inputs_embeds=stacked_inputs,
+            attention_mask=stacked_attention_mask,
+        )
+        # drop cls term
+        x = transformer_outputs['last_hidden_state'][:, 1:]
+        cls_output = transformer_outputs['last_hidden_state'][:, 0]
+
+        if self.input_type == 'seq':
             ## x (B, 3*L, D)
             x = x.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
 
@@ -164,113 +193,16 @@ class DecisionBERT(TrajectoryModel):
             reward_preds = self.predict_reward(x[:,2])
 
         elif self.input_type == 'cat':
-            ## this makes the sequence look like (cat(s_1, a_1, r_1), cat(s_2, a_2, r_2), ...)
-            stacked_inputs = torch.concat(
-                (state_embeddings, action_embeddings, rewards_embeddings), dim=2
-            )
-            if self.time_embed:
-                time_embeddings = self.embed_timestep(timesteps)
-                stacked_inputs = stacked_inputs + time_embeddings
-            # append cls token
-            cls_tokens = self.cls_token.expand(batch_size, -1, -1)
-            stacked_inputs = torch.cat((cls_tokens, stacked_inputs), dim=1) # bs * (1+seq) * (3*dim)
-
-            stacked_inputs = self.embed_ln(stacked_inputs)
-            
-            # add mask for cls token
-            stacked_attention_mask = torch.cat([torch.ones(batch_size, 1).cuda(), attention_mask], dim=1)
-        
-            # we feed in the input embeddings (not word indices as in NLP) to the model
-            transformer_outputs = self.bert(
-                inputs_embeds=stacked_inputs,
-                attention_mask=stacked_attention_mask,
-            )
-            # drop cls term
-            x = transformer_outputs['last_hidden_state'][:, 1:]
-
             ## (B, L, 3*D) 
-            #x = x.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
-
+            ## direct pred s,a,r from the 3*D token
             state_preds = self.predict_state(x)     
             action_preds = self.predict_action(x) 
             reward_preds = self.predict_reward(x)
 
-        return state_preds, action_preds, reward_preds
-    
-    def get_cls_output(self, states, actions, rewards, returns_to_go, timesteps, attention_mask=None, ):
-        batch_size, seq_length = states.shape[0], states.shape[1]
-
-        if attention_mask is None:
-            # attention mask for GPT: 1 if can be attended to, 0 if not
-            attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long)
-
-        # embed each modality with a different head
-        state_embeddings = self.embed_state(states) ## (batch_size, seq_length, self.hidden_size)
-        action_embeddings = self.embed_action(actions)
-        # returns_embeddings = self.embed_return(returns_to_go)
-        rewards_embeddings = self.embed_reward(rewards)
-
-        if self.input_type == 'seq':
-            if self.time_embed:
-                time_embeddings = self.embed_timestep(timesteps)
-                state_embeddings = state_embeddings + time_embeddings
-                action_embeddings = action_embeddings + time_embeddings
-                # returns_embeddings = returns_embeddings + time_embeddings
-                rewards_embeddings = rewards_embeddings + time_embeddings
-        
-            ## this makes the sequence look like (s_1, a_1, r_1, s_2, a_2, r_2,...)
-            stacked_inputs = torch.stack(
-                (state_embeddings, action_embeddings, rewards_embeddings), dim=1
-            ).permute(0, 2, 1, 3).reshape(batch_size, 3*seq_length, self.hidden_size) 
-            
-            # append cls token
-            cls_tokens = self.cls_token.expand(batch_size, -1, -1)
-            stacked_inputs = torch.cat((cls_tokens, stacked_inputs), dim=1) # bs * (1+3*seq) * dim
-            
-            ## after permute then reshape we can get (st, at, rt)
-            stacked_inputs = self.embed_ln(stacked_inputs)
-
-            ## here we think need to change
-            # to make the attention mask fit the stacked inputs, have to stack it as well
-            # append attention mask for cls_token
-            attention_mask = torch.cat([torch.ones(batch_size, 1).cuda(), attention_mask], dim=1)
-            
-            stacked_attention_mask = torch.stack(
-                (attention_mask, attention_mask, attention_mask), dim=1
-            ).permute(0, 2, 1).reshape(batch_size, 3*seq_length) 
-            
-            # we feed in the input embeddings (not word indices as in NLP) to the model
-            transformer_outputs = self.bert(
-                inputs_embeds=stacked_inputs,
-                attention_mask=stacked_attention_mask,
-            )
-            # drop the cls output
-            cls_output = transformer_outputs['last_hidden_state'][:, 0]
-
-        elif self.input_type == 'cat':
-            ## this makes the sequence look like (cat(s_1, a_1, r_1), cat(s_2, a_2, r_2), ...)
-            stacked_inputs = torch.concat(
-                (state_embeddings, action_embeddings, rewards_embeddings), dim=2
-            )
-            if self.time_embed:
-                time_embeddings = self.embed_timestep(timesteps)
-                stacked_inputs = stacked_inputs + time_embeddings
-                
-            cls_tokens = self.cls_token.expand(batch_size, -1, -1)
-            stacked_inputs = torch.cat((cls_tokens, stacked_inputs), dim=1) # bs * (1+seq) * (3*dim)
-
-            stacked_inputs = self.embed_ln(stacked_inputs)
-            stacked_attention_mask = torch.cat([torch.ones(batch_size, 1).cuda(), attention_mask], dim=1)
-        
-            # we feed in the input embeddings (not word indices as in NLP) to the model
-            transformer_outputs = self.bert(
-                inputs_embeds=stacked_inputs,
-                attention_mask=stacked_attention_mask,
-            )
-            # drop the cls output
-            cls_output = transformer_outputs['last_hidden_state'][:, 0]
-
-        return cls_output
+        if output_cls:
+            return (state_preds, action_preds, reward_preds), cls_output
+        else:
+            return state_preds, action_preds, reward_preds
 
 # where we use mask token as the mask for input
 # can be used for

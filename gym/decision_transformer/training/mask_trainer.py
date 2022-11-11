@@ -33,10 +33,12 @@ class MaskTrainer(Trainer):
 
         ## mask the batch data
         ## both input_masks and pred_masks are (Batch, Length)
-        input_masks, pred_masks = self.mask_batch_fn.input_masks, self.mask_batch_fn.prediction_masks
-        # input_masks, pred_masks = self.mask_batch_fn.get_input_masks(), self.mask_batch_fn.get_prediction_masks()
+        ## pred_masks = 1 - input_masks
+        ## those masked place (0 in input_masks) are where we need to pred (1 in pred_masks)
+        # input_masks, pred_masks = self.mask_batch_fn.input_masks, self.mask_batch_fn.prediction_masks
+        input_masks, pred_masks = self.mask_batch_fn.get_input_masks(), self.mask_batch_fn.get_prediction_masks()
         
-        state_inputs = states * input_masks["*"]["state"].unsqueeze(2) ## make input_masks (B, L, 1) and will broadcast to states
+        state_inputs = states * input_masks["*"]["state"].unsqueeze(2) ## make input_masks from (B,L) to (B, L, 1) and will broadcast to states
         action_inputs = actions * input_masks["*"]["action"].unsqueeze(2)
         # reward_inputs = rtg[:,:-1] * input_masks["*"]["rtg"].unsqueeze(2)
         reward_inputs = rewards * input_masks["*"]["reward"].unsqueeze(2)
@@ -47,24 +49,27 @@ class MaskTrainer(Trainer):
         )
 
         ## 
-        state_preds = state_preds * pred_masks["*"]["state"].unsqueeze(2)
+        state_preds_masks = pred_masks["*"]["state"].unsqueeze(2)
+        state_preds = state_preds * state_preds_masks
         state_dim = state_preds.shape[2]
-        state_preds = state_preds.reshape(-1, state_dim)[attention_mask.reshape(-1) > 0] ## concat the batch and length
+        ## concat the batch and length (B*L, D)
+        state_preds = state_preds.reshape(-1, state_dim)[attention_mask.reshape(-1) > 0] 
         
-        state_target = torch.clone(states * pred_masks["*"]["state"].unsqueeze(2))
+        state_target = torch.clone(states * state_preds_masks)
         state_target = state_target.reshape(-1, state_dim)[attention_mask.reshape(-1) > 0]
         
-        state_loss = torch.mean((state_preds - state_target)**2)
+        state_loss = torch.sum((state_preds - state_target)**2) / torch.sum(state_preds_masks)
 
         ## 
-        action_preds = action_preds * pred_masks["*"]["action"].unsqueeze(2)
+        action_preds_masks = pred_masks["*"]["action"].unsqueeze(2)
+        action_preds = action_preds * action_preds_masks
         act_dim = action_preds.shape[2]
         action_preds = action_preds.reshape(-1, act_dim)[attention_mask.reshape(-1) > 0]
         
-        action_target = torch.clone(actions * pred_masks["*"]["action"].unsqueeze(2))
+        action_target = torch.clone(actions * action_preds_masks)
         action_target = action_target.reshape(-1, act_dim)[attention_mask.reshape(-1) > 0]
         
-        action_loss = torch.mean((action_preds - action_target)**2)
+        action_loss = torch.sum((action_preds - action_target)**2) / torch.sum(action_preds_masks)
 
         # ##
         # rtg_preds = rtg_preds * pred_masks["*"]["rtg"].unsqueeze(2)
@@ -76,13 +81,14 @@ class MaskTrainer(Trainer):
         # rtg_loss = torch.mean((rtg_preds - rtg_target)**2)
 
         ##
-        reward_preds = reward_preds * pred_masks["*"]["rtg"].unsqueeze(2)
+        reward_preds_masks = pred_masks["*"]["reward"].unsqueeze(2)
+        reward_preds = reward_preds * reward_preds_masks
         reward_preds = reward_preds.reshape(-1, 1)[attention_mask.reshape(-1) > 0]
         
-        reward_target = torch.clone(rewards * pred_masks["*"]["reward"].unsqueeze(2))
+        reward_target = torch.clone(rewards * reward_preds_masks)
         reward_target = reward_target.reshape(-1, 1)[attention_mask.reshape(-1) > 0]
         
-        reward_loss = torch.mean((reward_preds - reward_preds)**2)
+        reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(reward_preds_masks)
 
         ##
         # total_loss = state_loss + action_loss + rtg_loss

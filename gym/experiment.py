@@ -7,6 +7,8 @@ import argparse
 import pickle
 import random
 import sys
+import datetime
+import dateutil.tz
 
 from decision_transformer.evaluation.evaluate_episodes import evaluate_episode, evaluate_episode_rtg
 from decision_transformer.models.decision_transformer import DecisionTransformer
@@ -35,7 +37,10 @@ def experiment(
     env_name, dataset = variant['env'], variant['dataset']
     model_type = variant['model_type']
     group_name = f'{exp_prefix}-{env_name}-{dataset}'
-    exp_prefix = f'{group_name}-{random.randint(int(1e5), int(1e6) - 1)}'
+    # exp_prefix = f'{group_name}-{random.randint(int(1e5), int(1e6) - 1)}'
+    now = datetime.datetime.now(dateutil.tz.tzlocal())
+    timestamp = now.strftime('%Y%m%d_%H%M%S') # %y is 22 while %Y 2022
+    exp_prefix = f'{group_name}-{timestamp}'
 
     if env_name == 'hopper':
         env = gym.make('Hopper-v3')
@@ -244,7 +249,8 @@ def experiment(
             max_position_embeddings=1024,
             hidden_dropout_prob=variant['dropout'],
             attention_probs_dropout_prob=variant['dropout'],
-            input_type=variant['input_type']
+            input_type=variant['input_type'],
+            device=device
         )
     else:
         raise NotImplementedError
@@ -299,7 +305,8 @@ def experiment(
             name=exp_prefix,
             group=group_name,
             project='decision-transformer',
-            config=variant
+            config=variant,
+            entity="porl" ## your wandb group name
         )
         # wandb.watch(model)  # wandb has some bug
 
@@ -332,8 +339,8 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--log_to_wandb', '-w', type=bool, default=False)
     parser.add_argument('--input_type', '-it', type=str, default='cat', choices=['seq', 'cat'], 
-                            help='input tuple are sequence (s,a,r)+time  or cat(s,a,r)') 
+                            help='input tuples can be sequence type (s,a,r)+time  or concat type cat(s,a,r)') 
     
     args = parser.parse_args()
 
-    experiment('gym-experiment', variant=vars(args))
+    experiment('gym', variant=vars(args))
