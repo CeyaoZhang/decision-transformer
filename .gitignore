@@ -1,4 +1,6 @@
-gym/data/*pkl
+gym/data/CheetahWorld*
+*.pkl
+*.npy
 
 gym/wandb
 

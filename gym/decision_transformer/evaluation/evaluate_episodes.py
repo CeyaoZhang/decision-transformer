@@ -102,6 +102,7 @@ def evaluate_episode_rtg(
     for t in range(max_ep_len):
 
         # add padding
+        ## why only add one zero token once a time not padding all at the beginning??
         actions = torch.cat([actions, torch.zeros((1, act_dim), device=device)], dim=0)
         rewards = torch.cat([rewards, torch.zeros(1, device=device)])
 
@@ -117,7 +118,7 @@ def evaluate_episode_rtg(
 
         state, reward, done, _ = env.step(action)
 
-        cur_state = torch.from_numpy(state).to(device=device).reshape(1, state_dim)
+        cur_state = torch.from_numpy(state).to(dtype=torch.float32, device=device).reshape(1, state_dim)
         states = torch.cat([states, cur_state], dim=0)
         rewards[-1] = reward
 
@@ -125,11 +126,10 @@ def evaluate_episode_rtg(
             pred_return = target_return[0,-1] - (reward/scale)
         else:
             pred_return = target_return[0,-1]
-        target_return = torch.cat(
-            [target_return, pred_return.reshape(1, 1)], dim=1)
+
+        target_return = torch.cat([target_return, pred_return.reshape(1, 1)], dim=1) ## why
         timesteps = torch.cat(
-            [timesteps,
-             torch.ones((1, 1), device=device, dtype=torch.long) * (t+1)], dim=1)
+            [timesteps, torch.ones((1, 1), device=device, dtype=torch.long) * (t+1)], dim=1) ## why
 
         episode_return += reward
         episode_length += 1

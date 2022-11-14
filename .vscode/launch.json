@@ -12,18 +12,18 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "--env", "halfcheetah"
+                "--env_name", "halfcheetah"
             ]
         },
         {
-            "name": "gym/dt",
+            "name": "gym/D4RL/dt",
             "type": "python",
             "request": "launch",
             "program": "experiment.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [
-                "--env", "halfcheetah",
+                "--env_name", "halfcheetah",
                 "--batch_size", "2",
                 "--K", "10",
                 "--model_type", "dt"
@@ -31,20 +31,70 @@
             "cwd": "${workspaceFolder}/gym",
         },
         {
-            "name": "gym/de/cat",
+            "name": "gym/D4RL/de/cat",
             "type": "python",
             "request": "launch",
             "program": "experiment.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [
-                "--env", "halfcheetah",
+                "--env_name", "halfcheetah",
                 "--batch_size", "2",
                 "--K", "10",
                 "--model_type", "de",
                 "-it", "cat"
             ],
             "cwd": "${workspaceFolder}/gym",
-        }
+        },
+        {
+            "name": "gym/D4RL/de/seq",
+            "type": "python",
+            "request": "launch",
+            "program": "experiment.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--env_name", "halfcheetah",
+                "--batch_size", "2",
+                "--K", "10",
+                "--model_type", "de",
+                "-it", "seq"
+            ],
+            "cwd": "${workspaceFolder}/gym",
+        },
+        {
+            "name": "gym/CheetahWorld/dt",
+            "type": "python",
+            "request": "launch",
+            "program": "experiment.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--dataset", "CheetahWorld-v2",
+                "--env_name", "cheetah-dir",
+                "--env_level", "normal",
+                "--batch_size", "2",
+                "--K", "200",
+                "--model_type", "dt"
+            ],
+            "cwd": "${workspaceFolder}/gym",
+        },
+        {
+            "name": "gym/CheetahWorld/de",
+            "type": "python",
+            "request": "launch",
+            "program": "experiment.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--dataset", "CheetahWorld-v2",
+                "--env_name", "cheetah-dir",
+                "--env_level", "normal",
+                "--batch_size", "2",
+                "--K", "200",
+                "--model_type", "de"
+            ],
+            "cwd": "${workspaceFolder}/gym",
+        },
     ]
 }

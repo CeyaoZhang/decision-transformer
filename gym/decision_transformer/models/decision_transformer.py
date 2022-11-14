@@ -102,11 +102,19 @@ class DecisionTransformer(TrajectoryModel):
 
     def get_action(self, states, actions, rewards, returns_to_go, timesteps, **kwargs):
         # we don't care about the past rewards in this model
+        '''
+        inputs: all torch.tensor
+            states  [L, Ds]
+            actions [L, Da]
+            rewards [L]
+            returns_to_go [1, L]
+            timesteps [1, L]
+        '''
 
-        states = states.reshape(1, -1, self.state_dim)
-        actions = actions.reshape(1, -1, self.act_dim)
-        returns_to_go = returns_to_go.reshape(1, -1, 1)
-        timesteps = timesteps.reshape(1, -1)
+        states = states.reshape(1, -1, self.state_dim) ## [1, L, Ds]
+        actions = actions.reshape(1, -1, self.act_dim) ## [1, L, Da]
+        returns_to_go = returns_to_go.reshape(1, -1, 1) ## [1, L, 1]
+        timesteps = timesteps.reshape(1, -1) ## [1, L]
 
         if self.max_length is not None:
             states = states[:,-self.max_length:]
@@ -115,22 +123,21 @@ class DecisionTransformer(TrajectoryModel):
             timesteps = timesteps[:,-self.max_length:]
 
             # pad all tokens to sequence length
+            ## this is almost useless, since self.max_length = states.shape[1]
             attention_mask = torch.cat([torch.zeros(self.max_length-states.shape[1]), torch.ones(states.shape[1])])
             attention_mask = attention_mask.to(dtype=torch.long, device=states.device).reshape(1, -1)
             states = torch.cat(
-                [torch.zeros((states.shape[0], self.max_length-states.shape[1], self.state_dim), device=states.device), states],
-                dim=1).to(dtype=torch.float32)
+                [torch.zeros((states.shape[0], self.max_length-states.shape[1], self.state_dim), 
+                    device=states.device), states], dim=1).to(dtype=torch.float32)
             actions = torch.cat(
                 [torch.zeros((actions.shape[0], self.max_length - actions.shape[1], self.act_dim),
-                             device=actions.device), actions],
-                dim=1).to(dtype=torch.float32)
+                             device=actions.device), actions], dim=1).to(dtype=torch.float32)
             returns_to_go = torch.cat(
-                [torch.zeros((returns_to_go.shape[0], self.max_length-returns_to_go.shape[1], 1), device=returns_to_go.device), returns_to_go],
-                dim=1).to(dtype=torch.float32)
+                [torch.zeros((returns_to_go.shape[0], self.max_length-returns_to_go.shape[1], 1), 
+                            device=returns_to_go.device), returns_to_go], dim=1).to(dtype=torch.float32)
             timesteps = torch.cat(
-                [torch.zeros((timesteps.shape[0], self.max_length-timesteps.shape[1]), device=timesteps.device), timesteps],
-                dim=1
-            ).to(dtype=torch.long)
+                [torch.zeros((timesteps.shape[0], self.max_length-timesteps.shape[1]), 
+                device=timesteps.device), timesteps], dim=1).to(dtype=torch.long)
         else:
             attention_mask = None
 

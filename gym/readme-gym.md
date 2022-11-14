@@ -26,16 +26,26 @@ python download_d4rl_datasets.py
 Experiments can be reproduced with the following:
 
 ```
-python experiment.py --env hopper --dataset medium --model_type dt
+python experiment.py --env_name hopper --env_level medium --model_type dt
 ```
 
 Adding `-w True` will log results to Weights and Biases.
 
 ## My example
+
+### use the D4RL dataset
 ```python
-python experiment.py --env halfcheetah --dataset expert --model_type dt -w True
+python experiment.py --env_name halfcheetah --env_level expert --model_type dt -w True
 
-nohup python -u experiment.py --env halfcheetah --dataset expert --model_type de --max_iters 30 -it cat -w True  > de_halfcheetah_expert_30iter_cat_w.log 2>&1 &   ## cost 24h to 45 iters
+## cost 24h to 45 iters, and 17h for 30 iters
+nohup python -u experiment.py --env_name halfcheetah --env_level expert --model_type de --max_iters 30 -it cat -w True  > de_halfcheetah_expert_30iter_cat_w.log 2>&1 &   
 
-nohup python -u experiment.py --env halfcheetah --dataset expert --model_type de --max_iters 30 -it seq -w True > de_halfcheetah_expert_30iter_seq_w.log 2>&1 &
+nohup python -u experiment.py --env_name halfcheetah --env_level expert --model_type de --max_iters 30 -it seq -w True > de_halfcheetah_expert_30iter_seq_w.log 2>&1 &
+```
+
+### use my own data
+```python
+nohup python -u experiment.py --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --max_iters 30 --K 200 -it cat -w True  > de_cheetah-dir_normal_30iter_cat_w.log 2>&1 & 
+
+nohup python -u experiment.py --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --max_iters 30 --K 200 -it seq -w True  > de_cheetah-dir_normal_30iter_seq_w.log 2>&1 & 
 ```
