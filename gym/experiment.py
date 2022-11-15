@@ -12,6 +12,7 @@ import datetime
 import dateutil.tz
 import os.path as osp
 
+
 from typing import List
 
 from decision_transformer.evaluation.evaluate_episodes import evaluate_episode, evaluate_episode_rtg
@@ -36,23 +37,37 @@ def get_mean_std(x:List[np.array]) -> np.array:
     return x_mean, x_std
 
 
+
 def experiment(
         exp_prefix,
         variant,
 ):  
     print(variant)
-    device = variant.get('device', 'cuda')
-    log_to_wandb = variant.get('log_to_wandb', False)
-
+    
     dataset = variant['dataset']
     env_name, env_level = variant['env_name'], variant['env_level']
     model_type = variant['model_type']
-    group_name = f'{exp_prefix}-{dataset}-{env_name}-{env_level}-{model_type}'
+    group_name = f'{exp_prefix}_{dataset}_{env_name}_{env_level}_{model_type}'
     # exp_prefix = f'{group_name}-{random.randint(int(1e5), int(1e6) - 1)}'
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime('%Y%m%d_%H%M%S') # %y is 22 while %Y 2022
-    exp_prefix = f'{group_name}-{timestamp}'
+    exp_prefix = f'{group_name}_{timestamp}'
 
+    log_to_wandb = variant.get('log_to_wandb', False)
+    if log_to_wandb:
+        wandb.init(
+            name=exp_prefix,
+            group=group_name,
+            project='decision-bert',
+            config=variant,
+            entity="porl" ## your wandb group name
+        )
+        # wandb.watch(model)  # wandb has some bug
+        ckpt_path = wandb.run.dir.split('/files')[0]
+        print(f'\n{ckpt_path}\n')
+    else:
+        ckpt_path = None
+    
     if dataset == 'D4RL':
         if env_name == 'hopper':
             env = gym.make('Hopper-v3')
@@ -93,7 +108,6 @@ def experiment(
         state_dim = env.observation_space.shape[0]
         act_dim = env.action_space.shape[0]
         
-
     elif dataset == 'CheetahWorld-v2':
         # dataset_path = f'data/{dataset}/{env_name}-{env_level}-v2.pkl'
         env_path = osp.join("data", dataset, env_name, env_level)
@@ -114,13 +128,12 @@ def experiment(
             with open(dataset_path, 'rb') as f:
                 ## trajectories is a list containing 1K path.
                 ## Each path is a dict containing (o,a,r,no,d) with 1K steps
-                trajectories.extend(pickle.load(f))
+                trajectories.extend(pickle.load(f)) ## do not use list.append()
 
         
         max_ep_len = 200
         scale = 1.
     
-      
     print(f"state_dim: {state_dim} & act_dim: {act_dim}")
 
     # save all path information into separate lists
@@ -137,12 +150,12 @@ def experiment(
         traj_lens.append(len(path['observations']))
         returns.append(path['rewards'].sum())
     traj_lens, returns = np.array(traj_lens), np.array(returns)
-    print(traj_lens)
+    # print(traj_lens)
 
     num_timesteps = sum(traj_lens) ## 1M for D4RL dataset
 
     print('=' * 50)
-    print(f'Starting new experiment: {env_name} {env_level} {path["rewards"].shape}')
+    print(f'Starting new experiment: {env_name} | {env_level} | {path["rewards"].shape}')
     print(f'{len(traj_lens)} trajectories, {num_timesteps} timesteps found')
     print(f'Average return: {np.mean(returns):.2f}, std: {np.std(returns):.2f}')
     print(f'Max return: {np.max(returns):.2f}, min: {np.min(returns):.2f}')
@@ -179,6 +192,7 @@ def experiment(
     # used to reweight sampling so we sample according to timesteps instead of trajectories
     p_sample = traj_lens[sorted_inds] / sum(traj_lens[sorted_inds])
 
+    device = variant.get('device', 'cuda')
     def get_batch(batch_size=256, max_len=K):
         batch_inds = np.random.choice(
             np.arange(num_trajectories),
@@ -292,6 +306,7 @@ def experiment(
             }
         return fn
 
+    
     if model_type == 'dt':
         model = DecisionTransformer(
             state_dim=state_dim,
@@ -382,23 +397,28 @@ def experiment(
             get_batch=get_batch,
             scheduler=scheduler,
             eval_fns=eval_fns,
+            ckpt_path=ckpt_path,
             mask_batch_fn=mask_batch_fn,
         )
 
-    if log_to_wandb:
-        wandb.init(
-            name=exp_prefix,
-            group=group_name,
-            project='decision-bert',
-            config=variant,
-            entity="porl" ## your wandb group name
-        )
-        # wandb.watch(model)  # wandb has some bug
+    
 
     for iter in range(variant['max_iters']):
-        outputs = trainer.train_iteration(num_steps=variant['num_steps_per_iter'], iter_num=iter+1, print_logs=True)
+        logs = trainer.train_iteration(num_steps=variant['num_steps_per_iter'], iter_num=iter+1, print_logs=True)
         if log_to_wandb:
-            wandb.log(outputs)
+            wandb.log(logs)
+        
+        ## save the model params
+        if (iter+1) % 1 == 0:
+            trainer.save_checkpoint()
+            print(f'save model')
+
+    ## save the Bert model for 
+    # model = 
+    # PATH = './model.pth'
+    # model.load_state_dict(torch.load(PATH))
+            
+    
     print("\n---------------------Finish!!!----------------------------")
 
 

@@ -10,11 +10,12 @@ from decision_transformer.training.trainer import Trainer
 
 class MaskTrainer(Trainer):
 
-    def __init__(self, model, optimizer, 
-        batch_size, get_batch, scheduler, eval_fns, mask_batch_fn
+    def __init__(self, model, optimizer, batch_size, 
+        get_batch, scheduler, eval_fns, ckpt_path, mask_batch_fn
         ):
 
-        super().__init__(model, optimizer, batch_size, get_batch, scheduler, eval_fns)
+        super().__init__(model, optimizer, batch_size, 
+            get_batch, scheduler, eval_fns, ckpt_path)
         # self.model = model
         # self.optimizer = optimizer
         # self.batch_size = batch_size

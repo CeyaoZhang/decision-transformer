@@ -43,7 +43,18 @@ nohup python -u experiment.py --env_name halfcheetah --env_level expert --model_
 nohup python -u experiment.py --env_name halfcheetah --env_level expert --model_type de --max_iters 30 -it seq -w True > de_halfcheetah_expert_30iter_seq_w.log 2>&1 &
 ```
 
-### use my own data
+### use my CheetahWorld-v2 data
+
+You can download the dataset from [CheetahWorld-v2](https://drive.google.com/drive/folders/1g0u7dFNf0lSC8K66yNNR0aprM0yBDrT6?usp=share_link).
+
+#### toy model
+```python
+nohup python -u experiment.py --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --max_iters 30 --K 200 -it cat -w True  > de_cheetah-dir_normal_30iter_cat_w.log 2>&1 & 
+
+nohup python -u experiment.py --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --max_iters 30 --K 200 -it seq -w True  > de_cheetah-dir_normal_30iter_seq_w.log 2>&1 & 
+```
+
+#### Big Model
 ```python
 nohup python -u experiment.py --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --max_iters 30 --K 200 -it cat -w True  > de_cheetah-dir_normal_30iter_cat_w.log 2>&1 & 
 

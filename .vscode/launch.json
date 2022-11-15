@@ -80,9 +80,10 @@
             "cwd": "${workspaceFolder}/gym",
         },
         {
-            "name": "gym/CheetahWorld/de",
+            "name": "gym/CheetahWorld/de/w",
             "type": "python",
             "request": "launch",
+            "cwd": "${workspaceFolder}/gym",
             "program": "experiment.py",
             "console": "integratedTerminal",
             "justMyCode": false,
@@ -90,11 +91,13 @@
                 "--dataset", "CheetahWorld-v2",
                 "--env_name", "cheetah-dir",
                 "--env_level", "normal",
+                "--num_steps_per_iter", "100",
                 "--batch_size", "2",
                 "--K", "200",
-                "--model_type", "de"
+                "--model_type", "de",
+                "-it", "seq",
+                "-w", "True"
             ],
-            "cwd": "${workspaceFolder}/gym",
         },
     ]
 }
