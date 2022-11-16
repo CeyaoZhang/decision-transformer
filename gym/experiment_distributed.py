@@ -52,7 +52,7 @@ def experiment(
 ):
     ddp_setup(rank, world_size)
     
-    device = variant.get('device', 'cuda')
+    #device = variant.get('device', 'cuda')
     log_to_wandb = variant.get('log_to_wandb', False)
 
     env_name, dataset = variant['env'], variant['dataset']
@@ -108,7 +108,7 @@ def experiment(
             hidden_dropout_prob=variant['dropout'],
             attention_probs_dropout_prob=variant['dropout'],
             input_type=variant['input_type'],
-            device=device
+            device=rank
         )
     else:
         raise NotImplementedError
@@ -126,7 +126,7 @@ def experiment(
     )
     
     # get masked trainer
-    mask_batch_fn = RandomPred(num_seqs=variant['batch_size'], seq_len=K, device=device)
+    mask_batch_fn = RandomPred(num_seqs=variant['batch_size'], seq_len=K, device=rank)
     trainer = Distributed_MaskTrainer(
         variant=variant,
         model=model,
