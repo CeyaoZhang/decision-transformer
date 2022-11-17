@@ -8,10 +8,12 @@ from decision_transformer.training.trainer import Trainer
 
 
 
+
 class MaskTrainer(Trainer):
 
     def __init__(self, model, optimizer, batch_size, 
-        get_batch, scheduler, eval_fns, ckpt_path, mask_batch_fn
+        get_batch, scheduler, eval_fns, ckpt_path, 
+        mask_batch_fn, train_dataloader, device
         ):
 
         super().__init__(model, optimizer, batch_size, 
@@ -23,15 +25,26 @@ class MaskTrainer(Trainer):
         # self.scheduler = scheduler
         # self.eval_fns = [] if eval_fns is None else eval_fns
         self.mask_batch_fn = mask_batch_fn
+        self.train_dataloader = train_dataloader
+        self.device = device
 
         self.diagnostics = dict()
         self.start_time = time.time()
 
     def train_step(self):
 
+        # states, actions, rewards, dones, \
+        #     rtg, timesteps, attention_mask = self.get_batch(self.batch_size)
         states, actions, rewards, dones, \
-            rtg, timesteps, attention_mask = self.get_batch(self.batch_size)
-
+            rtg, timesteps, attention_mask = next(iter(self.train_dataloader))
+        states = states.to(dtype=torch.float32, device=self.device)
+        actions= actions.to(dtype=torch.float32, device=self.device)
+        rewards = rewards.to(dtype=torch.float32, device=self.device)
+        dones = dones.to(dtype=torch.int32, device=self.device)
+        rtg = rtg.to(dtype=torch.float32, device=self.device)
+        timesteps = timesteps.to(dtype=torch.int32, device=self.device)
+        attention_mask = attention_mask.to(dtype=torch.float32, device=self.device)
+        
         ## mask the batch data
         ## both input_masks and pred_masks are (Batch, Length)
         ## pred_masks = 1 - input_masks

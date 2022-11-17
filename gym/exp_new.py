@@ -1,6 +1,9 @@
 import gym
 import numpy as np
 import torch
+
+
+
 import wandb
 
 import argparse
@@ -25,6 +28,14 @@ from decision_transformer.training.act_trainer import ActTrainer
 from decision_transformer.training.seq_trainer import SequenceTrainer
 from decision_transformer.training.mask_trainer import MaskTrainer ##
 from decision_transformer.training.mask_batches import RandomPred
+
+from decision_transformer.base_data import CustomDataset
+from torch.utils.data import DataLoader
+
+from distutils.util import strtobool
+def boolean_argument(value):
+    """Convert a string value to boolean."""
+    return bool(strtobool(value))
 
 def discount_cumsum(x, gamma):
     discount_cumsum = np.zeros_like(x)
@@ -80,6 +91,7 @@ def experiment(
     model_type = variant['model_type']
     input_type = variant['input_type']
     group_name = f'{exp_prefix}_{dataset_name}_{env_name}_{env_level}_{model_type}_{input_type}'
+    print(f'\ngroup_name: {group_name}\n')
     # exp_prefix = f'{group_name}-{random.randint(int(1e5), int(1e6) - 1)}'
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime('%Y%m%d_%H%M%S') # %y is 22 while %Y 2022
@@ -204,15 +216,15 @@ def experiment(
     print(f"state_dim: {state_dim} & act_dim: {act_dim}")
     # save all path information into separate lists
     mode = variant.get('mode', 'normal')
-    states, actions, rewards, returns, traj_lens, num_timesteps = eval_traj(env_name, env_level, trajectories, idx_name='all', mode=mode)
+    # states, actions, rewards, returns, traj_lens, num_timesteps = eval_traj(env_name, env_level, trajectories, idx_name='all', mode=mode)
 
-    # used for input normalization
-    states = np.concatenate(states, axis=0) ## np.array (1M, ds)
-    state_mean, state_std = np.mean(states, axis=0), np.std(states, axis=0) + 1e-6
-    actions = np.concatenate(actions, axis=0) ## np.array (1M, da)
-    action_mean, action_std = np.mean(actions, axis=0), np.std(actions, axis=0) + 1e-6
-    rewards = np.concatenate(rewards, axis=0) ## np.array (1M, 1)
-    reward_mean, reward_std = np.mean(rewards, axis=0), np.std(rewards, axis=0) + 1e-6
+    # # used for input normalization
+    # states = np.concatenate(states, axis=0) ## np.array (1M, ds)
+    # state_mean, state_std = np.mean(states, axis=0), np.std(states, axis=0) + 1e-6
+    # actions = np.concatenate(actions, axis=0) ## np.array (1M, da)
+    # action_mean, action_std = np.mean(actions, axis=0), np.std(actions, axis=0) + 1e-6
+    # rewards = np.concatenate(rewards, axis=0) ## np.array (1M, 1)
+    # reward_mean, reward_std = np.mean(rewards, axis=0), np.std(rewards, axis=0) + 1e-6
 
 
     K = variant['K']
@@ -222,20 +234,20 @@ def experiment(
 
     ## this part works only pac_traj < 1.0, unless it's useless
     # only train on top pct_traj trajectories (for %BC experiment)
-    num_timesteps = max(int(pct_traj*num_timesteps), 1)
-    sorted_inds = np.argsort(returns)  # lowest to highest, give the order of each return
-    num_trajectories = 1
-    timesteps = traj_lens[sorted_inds[-1]]
-    ind = len(trajectories) - 2 ## 998
-    while ind >= 0 and timesteps + traj_lens[sorted_inds[ind]] <= num_timesteps:
-        timesteps += traj_lens[sorted_inds[ind]]
-        num_trajectories += 1
-        ind -= 1
-    ## when terminal timesteps = 1M, num_trajectories=1000, ind = -1
-    sorted_inds = sorted_inds[-num_trajectories:]
+    # num_timesteps = max(int(pct_traj*num_timesteps), 1)
+    # sorted_inds = np.argsort(returns)  # lowest to highest, give the order of each return
+    # num_trajectories = 1
+    # timesteps = traj_lens[sorted_inds[-1]]
+    # ind = len(trajectories) - 2 ## 998
+    # while ind >= 0 and timesteps + traj_lens[sorted_inds[ind]] <= num_timesteps:
+    #     timesteps += traj_lens[sorted_inds[ind]]
+    #     num_trajectories += 1
+    #     ind -= 1
+    # ## when terminal timesteps = 1M, num_trajectories=1000, ind = -1
+    # sorted_inds = sorted_inds[-num_trajectories:]
 
-    # used to reweight sampling so we sample according to timesteps instead of trajectories
-    p_sample = traj_lens[sorted_inds] / sum(traj_lens[sorted_inds])
+    # # used to reweight sampling so we sample according to timesteps instead of trajectories
+    # p_sample = traj_lens[sorted_inds] / sum(traj_lens[sorted_inds])
 
     device = variant.get('device', 'cuda')
     gpu_id = variant['gpu_id']
@@ -437,7 +449,13 @@ def experiment(
             eval_fns=eval_fns,
         )
     elif model_type == 'de':
+
         mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
+        
+        training_data = CustomDataset(dataset_name, env_name, env_level, 
+            trajs=trajectories, max_len=K, eval_traj=eval_traj)
+        train_dataloader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
+        
         trainer = MaskTrainer(
             model=model,
             optimizer=optimizer,
@@ -447,9 +465,10 @@ def experiment(
             eval_fns=eval_fns,
             ckpt_path=ckpt_path,
             mask_batch_fn=mask_batch_fn,
+            train_dataloader=train_dataloader,
+            device=device
         )
 
-    
 
     for iter in range(variant['max_iters']):
         logs = trainer.train_iteration(num_steps=variant['num_steps_per_iter'], iter_num=iter+1, print_logs=True)
@@ -514,7 +533,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--gpu_id', type=int, default=0, help='GPU id')
-    parser.add_argument('--log_to_wandb', '-w', type=bool, default=False)
+    parser.add_argument('--log_to_wandb', '-w', type=boolean_argument, default=False)
 
     args = parser.parse_args()
 
