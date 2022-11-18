@@ -36,14 +36,14 @@ class MaskTrainer(Trainer):
         # states, actions, rewards, dones, \
         #     rtg, timesteps, attention_mask = self.get_batch(self.batch_size)
         states, actions, rewards, dones, \
-            rtg, timesteps, attention_mask = next(iter(self.train_dataloader))
+            rtgs, timesteps, attention_masks = next(iter(self.train_dataloader))
         states = states.to(dtype=torch.float32, device=self.device)
         actions= actions.to(dtype=torch.float32, device=self.device)
         rewards = rewards.to(dtype=torch.float32, device=self.device)
         dones = dones.to(dtype=torch.int32, device=self.device)
-        rtg = rtg.to(dtype=torch.float32, device=self.device)
+        rtgs = rtgs.to(dtype=torch.float32, device=self.device)
         timesteps = timesteps.to(dtype=torch.int32, device=self.device)
-        attention_mask = attention_mask.to(dtype=torch.float32, device=self.device)
+        attention_masks = attention_masks.to(dtype=torch.float32, device=self.device)
         
         ## mask the batch data
         ## both input_masks and pred_masks are (Batch, Length)
@@ -58,8 +58,12 @@ class MaskTrainer(Trainer):
         reward_inputs = rewards * input_masks["*"]["reward"].unsqueeze(2)
 
         ## use Bert to predict the mask token
+        # state_preds, action_preds, reward_preds = self.model(
+        #     state_inputs, action_inputs, reward_inputs, rtg[:,:-1], timesteps, attention_mask=attention_mask,
+        # )
+        assert state_inputs.shape[0] == rtgs.shape[0], 'please use the same length'
         state_preds, action_preds, reward_preds = self.model(
-            state_inputs, action_inputs, reward_inputs, rtg[:,:-1], timesteps, attention_mask=attention_mask,
+            state_inputs, action_inputs, reward_inputs, rtgs, timesteps, attention_masks,
         )
 
         ## 
@@ -67,10 +71,10 @@ class MaskTrainer(Trainer):
         state_preds = state_preds * state_preds_masks
         state_dim = state_preds.shape[2]
         ## concat the batch and length (B*L, D)
-        state_preds = state_preds.reshape(-1, state_dim)[attention_mask.reshape(-1) > 0] 
+        state_preds = state_preds.reshape(-1, state_dim)[attention_masks.reshape(-1) > 0] 
         
         state_target = torch.clone(states * state_preds_masks)
-        state_target = state_target.reshape(-1, state_dim)[attention_mask.reshape(-1) > 0]
+        state_target = state_target.reshape(-1, state_dim)[attention_masks.reshape(-1) > 0]
         
         state_loss = torch.sum((state_preds - state_target)**2) / torch.sum(state_preds_masks)
 
@@ -78,10 +82,10 @@ class MaskTrainer(Trainer):
         action_preds_masks = pred_masks["*"]["action"].unsqueeze(2)
         action_preds = action_preds * action_preds_masks
         act_dim = action_preds.shape[2]
-        action_preds = action_preds.reshape(-1, act_dim)[attention_mask.reshape(-1) > 0]
+        action_preds = action_preds.reshape(-1, act_dim)[attention_masks.reshape(-1) > 0]
         
         action_target = torch.clone(actions * action_preds_masks)
-        action_target = action_target.reshape(-1, act_dim)[attention_mask.reshape(-1) > 0]
+        action_target = action_target.reshape(-1, act_dim)[attention_masks.reshape(-1) > 0]
         
         action_loss = torch.sum((action_preds - action_target)**2) / torch.sum(action_preds_masks)
 
@@ -97,10 +101,10 @@ class MaskTrainer(Trainer):
         ##
         reward_preds_masks = pred_masks["*"]["reward"].unsqueeze(2)
         reward_preds = reward_preds * reward_preds_masks
-        reward_preds = reward_preds.reshape(-1, 1)[attention_mask.reshape(-1) > 0]
+        reward_preds = reward_preds.reshape(-1, 1)[attention_masks.reshape(-1) > 0]
         
         reward_target = torch.clone(rewards * reward_preds_masks)
-        reward_target = reward_target.reshape(-1, 1)[attention_mask.reshape(-1) > 0]
+        reward_target = reward_target.reshape(-1, 1)[attention_masks.reshape(-1) > 0]
         
         reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(reward_preds_masks)
 

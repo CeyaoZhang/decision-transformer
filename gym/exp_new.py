@@ -63,14 +63,18 @@ def eval_traj(env_name:str, env_level:str, trajs:List[Dict[str, np.array]], idx_
         traj_lens.append(len(path['observations']))
         returns.append(path['rewards'].sum())
 
-    traj_lens, returns = np.array(traj_lens), np.array(returns)
+    rewards, returns = np.array(rewards), np.array(returns)
     # print(traj_lens)
-
+    traj_lens = np.array(traj_lens)
     num_timesteps = sum(traj_lens) ## 1M for D4RL dataset
 
     print('=' * 50)
     print(f'Starting new experiment: {env_name} | {env_level} | {idx_name}')
     print(f'{len(traj_lens)} trajectories, {num_timesteps} timesteps found')
+    print('-' * 50)
+    print(f'Average reward: {np.mean(rewards):.2f}, std: {np.std(rewards):.2f}')
+    print(f'Max reward: {np.max(rewards):.2f}, min: {np.min(rewards):.2f}')
+    print('-' * 50)
     print(f'Average return: {np.mean(returns):.2f}, std: {np.std(returns):.2f}')
     print(f'Max return: {np.max(returns):.2f}, min: {np.min(returns):.2f}')
     print('=' * 50)
@@ -476,8 +480,9 @@ def experiment(
             wandb.log(logs)
         
         ## save the model params
-        if (iter+1) % 10 == 0:
+        if (iter+1) % 2 == 0:
             trainer.save_checkpoint()
+            print('=' * 50)
             print(f'save model')
 
     ## save the Bert model for 
@@ -524,7 +529,7 @@ if __name__ == '__main__':
 
     
     parser.add_argument('--max_iters', type=int, default=10)
-    parser.add_argument('--num_steps_per_iter', type=int, default=10000, help='how many batchs for training')
+    parser.add_argument('--num_steps_per_iter', '-ns', type=int, default=10000, help='how many batchs for training')
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--K', type=int, default=20)
     parser.add_argument('--pct_traj', type=float, default=1.)

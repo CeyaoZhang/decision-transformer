@@ -4,11 +4,11 @@ import numpy as np
 from typing import List, Dict, Tuple
 
 def discount_cumsum(x, gamma):
-    discount_cumsum = np.zeros_like(x)
-    discount_cumsum = x
+    _discount_cumsum = np.zeros_like(x)
+    _discount_cumsum[-1] = x[-1]
     for t in reversed(range(x.shape[0]-1)):
-        discount_cumsum[t] = x[t] + gamma * discount_cumsum[t+1]
-    return discount_cumsum
+        _discount_cumsum[t] = x[t] + gamma * _discount_cumsum[t+1]
+    return _discount_cumsum
 
 
 class CustomDataset(Dataset):
@@ -51,6 +51,15 @@ class CustomDataset(Dataset):
     
     # Fetch an item from the Dataset
     def __getitem__(self, idx) -> Tuple[np.array]:
+        '''
+        return
+            s: np.array (len, ds)
+            a: np.array (len, da)
+            r: np.array (len, 1)
+            rtg: np.array (len, 1)
+            timesteps: np.array (len)
+            mask: np.array (len)
+        '''
 
         traj = self.trajs[idx]
         
@@ -62,9 +71,12 @@ class CustomDataset(Dataset):
             r = traj['rewards']
             d = np.zeros(s.shape[0])
             timesteps = np.arange(s.shape[0])
-            rtg = discount_cumsum(traj['rewards'], gamma=1.)[:s.shape[0] + 1].reshape(-1, 1)
-            if rtg.shape[0] <= s.shape[0]:
-                rtg = np.concatenate([rtg, np.zeros((1, 1))], axis=0)
+            rtg = discount_cumsum(traj['rewards'], gamma=1.).reshape(-1, 1)
+            # if rtg.shape[0] <= s.shape[0]:
+            #     rtg = np.concatenate([rtg, np.zeros((1, 1))], axis=0)
+            # rtg = discount_cumsum(traj['rewards'], gamma=1.)[:s.shape[0] + 1].reshape(-1, 1)
+            # if rtg.shape[0] <= s.shape[0]:
+            #     rtg = np.concatenate([rtg, np.zeros((1, 1))], axis=0)
 
             # padding, state + reward normalization
             ## at first glance, this is strange for padding from the left,
@@ -73,11 +85,14 @@ class CustomDataset(Dataset):
             tlen = s.shape[0] ## the len of each traj
             s = np.concatenate([np.zeros((self.max_len - tlen, self.state_dim)), s], axis=0) ## make s = (1, self.max_len, Ds)
             s = (s - self.state_mean) / self.state_std
+
             ## why use np.ones for action??
             a = np.concatenate([np.ones((self.max_len - tlen, self.act_dim)) * -10., a], axis=0) 
             a = (a - self.action_mean) / self.action_std 
+
             r = np.concatenate([np.zeros((self.max_len - tlen, 1)), r], axis=0)
             r = (r - self.reward_mean) / self.reward_std 
+
             d = np.concatenate([np.ones((self.max_len - tlen)) * 2, d], axis=0)
             rtg = np.concatenate([np.zeros((self.max_len - tlen, 1)), rtg], axis=0) / self.scale
             timesteps = np.concatenate([np.zeros((self.max_len - tlen)), timesteps], axis=0)

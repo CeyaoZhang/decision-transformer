@@ -278,7 +278,7 @@ class RandomPred(Batch):
         mask_size = (self.num_seqs, self.seq_len)
         if self.random_mask_p:
             s_mask, a_mask, rtg_mask, r_mask = [], [], [], []
-            for i in range(self.num_seqs):
+            for i in range(self.num_seqs): ## this is the batch size
                 # NOTE: There are probably more efficient ways to do this.
                 seq_mask_ps = np.random.uniform()
                 seq_ps = [seq_mask_ps, 1 - seq_mask_ps]
