@@ -114,7 +114,8 @@ class CustomDataset(Dataset):
         act_dim:str=6,
         max_len:int=200,
         scale:float=1.0,
-        eval_traj=None
+        eval_traj=None,
+        normalize=True
     ):
         
         self.dataset_name = dataset_name
@@ -123,6 +124,7 @@ class CustomDataset(Dataset):
         self.act_dim = act_dim
         self.max_len = max_len
         self.scale = scale
+        self.normalize = normalize
         
         if eval_traj is not None:
             states, actions, rewards, returns, traj_lens, num_timesteps = eval_traj(env_name, env_level, trajs, idx_name='all', mode='normal')
@@ -163,12 +165,15 @@ class CustomDataset(Dataset):
             ## the key point is to be consistence with mask
             tlen = s.shape[0] ## the len of each traj
             s = np.concatenate([np.zeros((self.max_len - tlen, self.state_dim)), s], axis=0) ## make s = (1, self.max_len, Ds)
-            s = (s - self.state_mean) / self.state_std
             ## why use np.ones for action??
             a = np.concatenate([np.ones((self.max_len - tlen, self.act_dim)) * -10., a], axis=0) 
-            a = (a - self.action_mean) / self.action_std 
             r = np.concatenate([np.zeros((self.max_len - tlen, 1)), r], axis=0)
-            r = (r - self.reward_mean) / self.reward_std 
+            
+            if self.normalize:
+                s = (s - self.state_mean) / self.state_std
+                a = (a - self.action_mean) / self.action_std 
+                r = (r - self.reward_mean) / self.reward_std
+                
             d = np.concatenate([np.ones((self.max_len - tlen)) * 2, d], axis=0)
             rtg = np.concatenate([np.zeros((self.max_len - tlen, 1)), rtg], axis=0) / self.scale
             timesteps = np.concatenate([np.zeros((self.max_len - tlen)), timesteps], axis=0)

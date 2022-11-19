@@ -101,7 +101,7 @@ class Distributed_MaskTrainer:
             if self.gpu_id == 0 and self.log_to_wandb:
                 wandb.log(epoch_logs, step=epoch)
                 
-            if self.gpu_id == 0 and (epoch+1) == self.variant['epoch']:
+            if self.gpu_id == 0 and (epoch+1) % self.variant['save_epoch']==0:
                 path = 'epoch ' + str(epoch) + '.pt'
                 if self.log_to_wandb:
                     save_path = os.path.join(wandb.run.dir, 'models')
@@ -129,7 +129,7 @@ class Distributed_MaskTrainer:
         timesteps = timesteps.to(dtype=torch.int32, device=self.gpu_id)
         attention_mask = attention_mask.to(dtype=torch.float32, device=self.gpu_id)
         
-        input_masks, pred_masks = self.mask_batch_fn.get_input_masks(), self.mask_batch_fn.get_prediction_masks()
+        input_masks, pred_masks = self.mask_batch_fn.get_all_masks()
         
         state_inputs = states * input_masks["*"]["state"].unsqueeze(2) ## make input_masks from (B,L) to (B, L, 1) and will broadcast to states
         action_inputs = actions * input_masks["*"]["action"].unsqueeze(2)

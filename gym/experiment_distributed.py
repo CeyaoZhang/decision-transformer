@@ -195,10 +195,9 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
     parser.add_argument('--warmup_steps', type=int, default=10000)
     parser.add_argument('--num_eval_episodes', type=int, default=100)
-    parser.add_argument('--epoch', type=int, default=50)
-    parser.add_argument('--save_epoch', type=int, default=5)
-    #parser.add_argument('--num_steps_per_iter', type=int, default=10000)
-    #parser.add_argument('--device', type=str, default='cuda')
+    parser.add_argument('--epoch', type=int, default=200)
+    parser.add_argument('--save_epoch', type=int, default=50)
+    parser.add_argument('--normalize', type=bool, default=True)
     parser.add_argument('--log_to_wandb', '-w', type=bool, default=False)
     parser.add_argument('--input_type', '-it', type=str, default='cat', choices=['seq', 'cat'], 
                             help='input tuples can be sequence type (s,a,r)+time  or concat type cat(s,a,r)') 
@@ -213,6 +212,6 @@ if __name__ == '__main__':
     variant = vars(args)
     trajectories = get_trajectory_CheetahWorld(variant['env_name'], variant['env_level'], variant['root'], variant['dataset'])
     training_data = CustomDataset(variant['dataset'], variant['env_name'], variant['env_level'], 
-        trajs=trajectories, max_len=variant['K'], eval_traj=eval_traj)
+        trajs=trajectories, max_len=variant['K'], eval_traj=eval_traj, normalize=variant['normalize'])
     
     mp.spawn(experiment, args=(world_size, training_data, 'gym', vars(args)), nprocs=world_size)
