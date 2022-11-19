@@ -72,8 +72,8 @@ class DecisionBERT(TrajectoryModel):
 
         ## self.bert = BertForMaskedLM(config) ## without use the pretrained model
         self.bert = BertModel(config, add_pooling_layer=False)
-        print(f'total paras: {self.bert.num_parameters()}')
-        print('=' * 80)
+        #print(f'total paras: {self.bert.num_parameters()}')
+        #print('=' * 80)
         
         # self.embed_return = nn.Linear(1, hidden_size)
         self.embed_reward = nn.Linear(1, hidden_size)

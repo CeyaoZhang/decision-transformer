@@ -148,7 +148,7 @@ class Distributed_MaskTrainer:
         state_target = torch.clone(states * state_preds_masks)
         state_target = state_target.reshape(-1, state_dim)[attention_mask.reshape(-1) > 0]
         
-        state_loss = torch.sum((state_preds - state_target)**2) / torch.sum(state_preds_masks)
+        state_loss = torch.sum((state_preds - state_target)**2) / torch.sum(torch.abs(state_preds) > 0)
 
         action_preds_masks = pred_masks["*"]["action"].unsqueeze(2)
         action_preds = action_preds * action_preds_masks
@@ -158,7 +158,7 @@ class Distributed_MaskTrainer:
         action_target = torch.clone(actions * action_preds_masks)
         action_target = action_target.reshape(-1, act_dim)[attention_mask.reshape(-1) > 0]
         
-        action_loss = torch.sum((action_preds - action_target)**2) / torch.sum(action_preds_masks)
+        action_loss = torch.sum((action_preds - action_target)**2) / torch.sum(torch.abs(action_preds) > 0)
 
         reward_preds_masks = pred_masks["*"]["reward"].unsqueeze(2)
         reward_preds = reward_preds * reward_preds_masks
@@ -167,7 +167,7 @@ class Distributed_MaskTrainer:
         reward_target = torch.clone(rewards * reward_preds_masks)
         reward_target = reward_target.reshape(-1, 1)[attention_mask.reshape(-1) > 0]
         
-        reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(reward_preds_masks)
+        reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(torch.abs(reward_preds) > 0)
         
         total_loss = state_loss + action_loss + reward_loss
         
