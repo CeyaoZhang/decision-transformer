@@ -6,6 +6,7 @@ import wandb
 import argparse
 import pickle
 import random
+import os
 import sys
 import datetime
 import dateutil.tz
@@ -19,11 +20,12 @@ from decision_transformer.training.seq_trainer import SequenceTrainer
 from decision_transformer.training.trainer_distributed import Distributed_MaskTrainer ##
 from decision_transformer.training.mask_batches import RandomPred
 
-from torch.distributed import init_process_group, destroy_process_group
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.distributed import DistributedSampler
+from decision_transformer.dataset import eval_traj, get_trajectory_CheetahWorld, CustomDataset
 
+from torch.distributed import init_process_group, destroy_process_group
 import torch.multiprocessing as mp
-import os
 
 def ddp_setup(rank, world_size):
     """
@@ -39,6 +41,7 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
     return DataLoader(
         dataset,
         batch_size=batch_size,
+        drop_last=True,
         pin_memory=True,
         shuffle=False,
         sampler=DistributedSampler(dataset)
@@ -47,6 +50,7 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
 def experiment(
         rank,
         world_size,
+        training_data,
         exp_prefix,
         variant,
 ):
@@ -54,20 +58,37 @@ def experiment(
     
     #device = variant.get('device', 'cuda')
     log_to_wandb = variant.get('log_to_wandb', False)
-
-    env_name, dataset = variant['env'], variant['dataset']
+    
+    dataset_name = variant['dataset']
+    env_name, env_level = variant['env_name'], variant['env_level']
     model_type = variant['model_type']
-    group_name = f'{exp_prefix}-{env_name}-{dataset}'
+    input_type = variant['input_type']
+    group_name = f'{exp_prefix}_{dataset_name}_{env_name}_{env_level}_{model_type}_{input_type}'
+    if rank == 0:
+        print(f'\ngroup_name: {group_name}\n')
     # exp_prefix = f'{group_name}-{random.randint(int(1e5), int(1e6) - 1)}'
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     timestamp = now.strftime('%Y%m%d_%H%M%S') # %y is 22 while %Y 2022
     exp_prefix = f'{group_name}-{timestamp}'
     
-    # dataset todo
-    dataset = get_dataset()
+    max_ep_len = 200
+    scale = 1.
+    state_dim = 20
+    act_dim = 6
+    
+    # save all path information into separate lists
+    mode = variant.get('mode', 'normal')
+
+    K = variant['K']
+    batch_size = variant['batch_size']
+    num_eval_episodes = variant['num_eval_episodes']
+    
+    # dataset
+    #training_data = CustomDataset(dataset_name, env_name, env_level, 
+    #    trajs=trajectories, max_len=K, eval_traj=eval_traj)
     
     # get data
-    train_data = prepare_dataloader(dataset, variant['batch_size'])
+    train_dataloader = prepare_dataloader(training_data, variant['batch_size'])
     
     # get model
     if model_type == 'dt':
@@ -130,58 +151,68 @@ def experiment(
     trainer = Distributed_MaskTrainer(
         variant=variant,
         model=model,
-        train_data=train_data
+        train_dataloader=train_dataloader,
         optimizer=optimizer,
         gpu_id=rank,
         scheduler=scheduler,
         eval_fns=None,
         mask_batch_fn=mask_batch_fn,
     )
-
-    if log_to_wandb:
-        wandb.init(
-            name=exp_prefix,
-            group=group_name,
-            project='decision-transformer',
-            config=variant,
-            entity="porl" ## your wandb group name
-        )
-        # wandb.watch(model)  # wandb has some bug
+    if rank == 0:
+        if log_to_wandb:
+            wandb.init(
+                name=exp_prefix,
+                group=group_name,
+                project='decision-bert',
+                config=variant,
+                entity="porl" ## your wandb group name
+            )
+            # wandb.watch(model)  # wandb has some bug
 
     #for iter in range(variant['epoch']):
-    trainer.train_iteration(variant)
+    trainer.train_iteration()
             
     destroy_process_group()
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='hopper') # 'halfcheetah', 'hopper', 'walker2d'
-    parser.add_argument('--dataset', type=str, default='medium')  # medium, medium-replay, medium-expert, expert
+    parser.add_argument('--dataset', type=str, default='CheetahWorld-v2', 
+                            choices=['D4RL', 'CheetahWorld-v2']) 
+    parser.add_argument('--env_name', type=str, default='all') 
+    parser.add_argument('--env_level', type=str, default='all')
     parser.add_argument('--mode', type=str, default='normal')  # normal for standard setting, delayed for sparse
-    parser.add_argument('--K', type=int, default=20)
+    parser.add_argument('--K', type=int, default=200)
     parser.add_argument('--pct_traj', type=float, default=1.)
-    parser.add_argument('--batch_size', type=int, default=64)
-    parser.add_argument('--model_type', type=str, default='dt')  # dt for decision transformer, bc for behavior cloning, be for decision bert
-    parser.add_argument('--embed_dim', type=int, default=128)
-    parser.add_argument('--n_layer', type=int, default=3)
-    parser.add_argument('--n_head', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=512)
+    parser.add_argument('--model_type', type=str, default='de')  # dt for decision transformer, bc for behavior cloning, be for decision bert
+    parser.add_argument('--embed_dim', type=int, default=160)
+    parser.add_argument('--n_layer', type=int, default=6)
+    parser.add_argument('--n_head', type=int, default=4)
     parser.add_argument('--activation_function', type=str, default='relu')
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--learning_rate', '-lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
     parser.add_argument('--warmup_steps', type=int, default=10000)
     parser.add_argument('--num_eval_episodes', type=int, default=100)
-    parser.add_argument('--epoch', type=int, default=10)
-    parser.add_argument('--num_steps_per_iter', type=int, default=10000)
-    parser.add_argument('--device', type=str, default='cuda')
+    parser.add_argument('--epoch', type=int, default=50)
+    parser.add_argument('--save_epoch', type=int, default=5)
+    #parser.add_argument('--num_steps_per_iter', type=int, default=10000)
+    #parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--log_to_wandb', '-w', type=bool, default=False)
     parser.add_argument('--input_type', '-it', type=str, default='cat', choices=['seq', 'cat'], 
                             help='input tuples can be sequence type (s,a,r)+time  or concat type cat(s,a,r)') 
     
-    parser.add_argument('--world_size', type=int, default=2) # use how many gpus to distribute
+    parser.add_argument('--world_size', type=int, default=8) # use how many gpus to distribute
+    parser.add_argument('--root', type=str, default='./data', help='dataset path')
     
     args = parser.parse_args()
     
     world_size = args.world_size
-    mp.spawn(experiment, args=(world_size, 'gym', vars(args)), nprocs=world_size)
+    
+    variant = vars(args)
+    trajectories = get_trajectory_CheetahWorld(variant['env_name'], variant['env_level'], variant['root'], variant['dataset'])
+    training_data = CustomDataset(variant['dataset'], variant['env_name'], variant['env_level'], 
+        trajs=trajectories, max_len=variant['K'], eval_traj=eval_traj)
+    
+    mp.spawn(experiment, args=(world_size, training_data, 'gym', vars(args)), nprocs=world_size)

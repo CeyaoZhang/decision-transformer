@@ -1,7 +1,7 @@
 gym/data/CheetahWorld*
 *.pkl
 *.npy
-
+*.ipynb*
 gym/wandb
 
 # Byte-compiled / optimized / DLL files
