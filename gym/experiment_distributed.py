@@ -208,10 +208,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     world_size = args.world_size
+    max_gpu_num = torch.cuda.device_count()
+    assert world_size <= max_gpu_num, "The world size should not larger than the your device GPU number"
     
     variant = vars(args)
     trajectories = get_trajectory_CheetahWorld(variant['env_name'], variant['env_level'], variant['root'], variant['dataset'])
     training_data = CustomDataset(variant['dataset'], variant['env_name'], variant['env_level'], 
         trajs=trajectories, max_len=variant['K'], eval_traj=eval_traj, normalize=variant['normalize'])
     
-    mp.spawn(experiment, args=(world_size, training_data, 'gym', vars(args)), nprocs=world_size)
+    mp.spawn(experiment, args=(world_size, training_data, 'gym', variant), nprocs=world_size)
