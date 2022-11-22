@@ -29,8 +29,10 @@ from decision_transformer.training.seq_trainer import SequenceTrainer
 from decision_transformer.training.mask_trainer import MaskTrainer ##
 from decision_transformer.training.mask_batches import RandomPred
 
-from decision_transformer.base_data import CustomDataset
+from decision_transformer.base_data import CustomDataset, get_traj_from_dataset, eval_traj 
 from torch.utils.data import DataLoader
+
+from decision_transformer.evaluation.visualize_traj import VisualizeTraj
 
 from distutils.util import strtobool
 def boolean_argument(value):
@@ -49,37 +51,6 @@ def get_mean_std(x:List[np.array]) -> np.array:
     x_mean, x_std = np.mean(x, axis=0), np.std(x, axis=0) + 1e-6
     return x_mean, x_std
 
-def eval_traj(env_name:str, env_level:str, trajs:List[Dict[str, np.array]], idx_name:str, mode:str='normal')->list:
-
-    states, traj_lens, returns = [], [], []
-    actions, rewards = [], [] ## I add this two for normalization about actions and rewards
-    for path in trajs:
-        if mode == 'delayed':  # delayed: all rewards moved to end of trajectory
-            path['rewards'][-1] = path['rewards'].sum()
-            path['rewards'][:-1] = 0.
-        states.append(path['observations'])
-        actions.append(path['actions'])
-        rewards.append(path['rewards'])
-        traj_lens.append(len(path['observations']))
-        returns.append(path['rewards'].sum())
-
-    rewards, returns = np.array(rewards), np.array(returns)
-    # print(traj_lens)
-    traj_lens = np.array(traj_lens)
-    num_timesteps = sum(traj_lens) ## 1M for D4RL dataset
-
-    print('=' * 50)
-    print(f'Starting new experiment: {env_name} | {env_level} | {idx_name}')
-    print(f'{len(traj_lens)} trajectories, {num_timesteps} timesteps found')
-    print('-' * 50)
-    print(f'Average reward: {np.mean(rewards):.2f}, std: {np.std(rewards):.2f}')
-    print(f'Max reward: {np.max(rewards):.2f}, min: {np.min(rewards):.2f}')
-    print('-' * 50)
-    print(f'Average return: {np.mean(returns):.2f}, std: {np.std(returns):.2f}')
-    print(f'Max return: {np.max(returns):.2f}, min: {np.min(returns):.2f}')
-    print('=' * 50)
-
-    return states, actions, rewards, returns, traj_lens, num_timesteps
 
 
 
@@ -90,6 +61,7 @@ def experiment(
     for (key, value) in variant.items():
         print(f"{key}: {value}")
     
+
     dataset_name = variant['dataset']
     env_name, env_level = variant['env_name'], variant['env_level']
     model_type = variant['model_type']
@@ -116,108 +88,7 @@ def experiment(
     else:
         ckpt_path = None
     
-    if dataset_name == 'D4RL':
-        if env_name == 'hopper':
-            env = gym.make('Hopper-v3')
-            max_ep_len = 1000
-            env_targets = [3600, 1800]  # evaluation conditioning targets
-            scale = 1000.  # normalization for rewards/returns
-        elif env_name == 'halfcheetah':
-            env = gym.make('HalfCheetah-v3')
-            max_ep_len = 1000
-            env_targets = [12000, 6000]
-            scale = 1000.
-        elif env_name == 'walker2d':
-            env = gym.make('Walker2d-v3')
-            max_ep_len = 1000
-            env_targets = [5000, 2500]
-            scale = 1000.
-        elif env_name == 'reacher2d':
-            from decision_transformer.envs.reacher_2d import Reacher2dEnv
-            env = Reacher2dEnv()
-            max_ep_len = 100
-            env_targets = [76, 40]
-            scale = 10.
-        else:
-            raise NotImplementedError
 
-        if model_type == 'bc':
-            env_targets = env_targets[:1]  # since BC ignores target, no need for different evaluations
-
-        # load dataset
-        # dataset_path = f'data/{dataset}/{env_name}-{env_level}-v2.pkl'
-        dataset_path = osp.join("data", dataset_name, f"{env_name}-{env_level}-v2.pkl")
-        assert osp.exists(dataset_path), 'The path is not exist!!!'
-        with open(dataset_path, 'rb') as f:
-            ## trajectories is a list containing 1K path.
-            ## Each path is a dict containing (o,a,r,no,d) with 1K steps
-            trajectories = pickle.load(f)
-
-        state_dim = env.observation_space.shape[0]
-        act_dim = env.action_space.shape[0]
-        
-    elif dataset_name == 'CheetahWorld-v2':
-
-        max_ep_len = 200
-        scale = 1.
-        state_dim = 20
-        act_dim = 6
-
-        def get_traj_from_env_levl(env_name:str, env_name_path:str, env_level:str, trajectories:List[Dict[str, np.array]]):
-            level_path = osp.join(env_name_path, env_level)
-            assert osp.exists(level_path), f'The {level_path} is not exist!!!'
-
-            ## get all the task idx in each env
-            ## e.g. 2 tasks in cheetah-dir and 65 tasks in chhetah-vel
-            # json_path = osp.join(level_path, f"info_{env_name}_{env_level}.json")
-            # with open(json_path, 'rb') as f:
-            #     json_file = json.load(f)
-            #     # idxs = json_file['idxs'] 
-            #     state_dim = json_file['state_dim']
-            #     act_dim = json_file['act_dim']
-                
-            for buffer_name in os.listdir(level_path):
-                if buffer_name.endswith('.pkl'):
-                    # dataset_path = osp.join(level_path, f"buffer_{env_name}_{env_level}_id{idx}.pkl")
-                    buffer_path = osp.join(level_path, buffer_name)
-                    assert osp.exists(buffer_path), f'The {buffer_path} is not exist!!!'
-
-                    idx_name = re.split('_|.pkl', buffer_name)[-2]
-
-                    with open(buffer_path, 'rb') as f:
-                        ## trajectories is a list containing 1K path.
-                        ## Each path is a dict containing (o,a,r,no,d) with 1K steps
-                        _trajs = pickle.load(f)
-                        _ = eval_traj(env_name, env_level, _trajs, idx_name)
-                        trajectories.extend(_trajs) ## do not use list.append()
-                        
-            return trajectories
-        
-        trajectories = []
-        dataset_path = osp.join("data", dataset_name)
-        if env_name == 'all': 
-            for _env_name in os.listdir(dataset_path):
-                env_name_path = osp.join(dataset_path, _env_name)
-
-                if env_level == 'all': 
-                    for _env_level in os.listdir(env_name_path):
-                        trajectories = get_traj_from_env_levl(_env_name, env_name_path, _env_level, trajectories)
-
-
-                else: ## env_level = one of ['normal', 'relabel', 'cic', 'rnd', 'icmapt']
-                    trajectories = get_traj_from_env_levl(_env_name, env_name_path, env_level, trajectories)
-                    
-        else: ## env_name in ['cheetah-dir', 'cheetah-vel']
-            env_name_path = osp.join(dataset_path, env_name)
-
-            if env_level == 'all': 
-                    for _env_level in os.listdir(env_name_path):
-                        trajectories = get_traj_from_env_levl(env_name, env_name_path, _env_level, trajectories)
-
-            else: ## env_level = one of ['normal', 'relabel', 'cic', 'rnd', 'icmapt']
-                trajectories = get_traj_from_env_levl(env_name, env_name_path, env_level, trajectories)
-    
-    print(f"state_dim: {state_dim} & act_dim: {act_dim}")
     # save all path information into separate lists
     mode = variant.get('mode', 'normal')
     # states, actions, rewards, returns, traj_lens, num_timesteps = eval_traj(env_name, env_level, trajectories, idx_name='all', mode=mode)
@@ -231,7 +102,7 @@ def experiment(
     # reward_mean, reward_std = np.mean(rewards, axis=0), np.std(rewards, axis=0) + 1e-6
 
 
-    K = variant['K']
+    max_traj_len = variant['max_traj_len']
     batch_size = variant['batch_size']
     num_eval_episodes = variant['num_eval_episodes']
     pct_traj = variant.get('pct_traj', 1.)
@@ -257,7 +128,7 @@ def experiment(
     gpu_id = variant['gpu_id']
     os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 
-    def get_batch(batch_size=256, max_len=K):
+    def get_batch(batch_size=256, max_len=max_traj_len):
         batch_inds = np.random.choice(
             np.arange(num_trajectories),
             size=batch_size,
@@ -370,12 +241,21 @@ def experiment(
             }
         return fn
 
+    trajectories, (state_dim, act_dim, max_ep_len, env_targets) \
+        = get_traj_from_dataset(dataset_name, env_name, env_level, model_type)
     
+    normalize=variant['normalize']
+    training_data = CustomDataset(dataset_name, env_name, env_level, 
+                trajs=trajectories, max_len=max_traj_len, eval_traj=eval_traj, normalize=normalize)
+    
+    train_dataloader = DataLoader(training_data, batch_size=batch_size, 
+                shuffle=True, num_workers=4, drop_last=True, pin_memory=True,)
+
     if model_type == 'dt':
         model = DecisionTransformer(
             state_dim=state_dim,
             act_dim=act_dim,
-            max_length=K,
+            max_length=max_traj_len,
             max_ep_len=max_ep_len,
             hidden_size=variant['embed_dim'],
             n_layer=variant['n_layer'],
@@ -390,7 +270,7 @@ def experiment(
         model = MLPBCModel(
             state_dim=state_dim,
             act_dim=act_dim,
-            max_length=K,
+            max_length=max_traj_len,
             hidden_size=variant['embed_dim'],
             n_layer=variant['n_layer'],
         )
@@ -398,7 +278,7 @@ def experiment(
         model = DecisionBERT(
             state_dim=state_dim,
             act_dim=act_dim,
-            max_length=K,
+            max_length=max_traj_len,
             max_ep_len=max_ep_len,
             hidden_size=variant['embed_dim'],
             num_hidden_layers=variant['n_layer'],
@@ -414,81 +294,99 @@ def experiment(
     else:
         raise NotImplementedError
 
-    model = model.to(device=device)
+    
+    train_type = variant['train_type']
+    if train_type == 'pretrain':
 
-    warmup_steps = variant['warmup_steps']
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=variant['learning_rate'],
-        weight_decay=variant['weight_decay'],
-    )
-    scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer,
-        lambda steps: min((steps+1)/warmup_steps, 1)
-    )
+        model = model.to(device=device)
 
-    if dataset_name == 'D4RL':
-        eval_fns = [eval_episodes(tar) for tar in env_targets]
-    elif dataset_name == 'CheetahWorld-v2':
-        eval_fns = None
-
-    if model_type == 'dt':
-        trainer = SequenceTrainer(
-            model=model,
-            optimizer=optimizer,
-            batch_size=batch_size,
-            get_batch=get_batch,
-            scheduler=scheduler,
-            loss_fn=lambda s_hat, a_hat, r_hat, s, a, r: torch.mean((a_hat - a)**2),
-            eval_fns=eval_fns,
+        warmup_steps = variant['warmup_steps']
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=variant['learning_rate'],
+            weight_decay=variant['weight_decay'],
         )
-    elif model_type == 'bc':
-        trainer = ActTrainer(
-            model=model,
-            optimizer=optimizer,
-            batch_size=batch_size,
-            get_batch=get_batch,
-            scheduler=scheduler,
-            loss_fn=lambda s_hat, a_hat, r_hat, s, a, r: torch.mean((a_hat - a)**2),
-            eval_fns=eval_fns,
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lambda steps: min((steps+1)/warmup_steps, 1)
         )
-    elif model_type == 'de':
 
-        mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
+        if dataset_name == 'D4RL':
+            eval_fns = [eval_episodes(tar) for tar in env_targets]
+        elif dataset_name == 'CheetahWorld-v2':
+            eval_fns = None
+
+        if model_type == 'dt':
+            trainer = SequenceTrainer(
+                model=model,
+                optimizer=optimizer,
+                batch_size=batch_size,
+                get_batch=get_batch,
+                scheduler=scheduler,
+                loss_fn=lambda s_hat, a_hat, r_hat, s, a, r: torch.mean((a_hat - a)**2),
+                eval_fns=eval_fns,
+            )
+        elif model_type == 'bc':
+            trainer = ActTrainer(
+                model=model,
+                optimizer=optimizer,
+                batch_size=batch_size,
+                get_batch=get_batch,
+                scheduler=scheduler,
+                loss_fn=lambda s_hat, a_hat, r_hat, s, a, r: torch.mean((a_hat - a)**2),
+                eval_fns=eval_fns,
+            )
+        elif model_type == 'de':
+
+            mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=max_traj_len, device=device)
+
+            trainer = MaskTrainer(
+                variant=variant,
+                model=model,
+                optimizer=optimizer,
+                batch_size=batch_size,
+                get_batch=get_batch,
+                scheduler=scheduler,
+                eval_fns=eval_fns,
+                ckpt_path=ckpt_path,
+                mask_batch_fn=mask_batch_fn,
+                train_dataloader=train_dataloader,
+                device=device
+            )
+
+        trainer.train_iteration()
+        # for iter in range(variant['max_iters']):
+        #     logs = trainer.train_iteration(num_steps=variant['num_steps_per_iter'], iter_num=iter+1, print_logs=True)
+        #     if log_to_wandb:
+        #         wandb.log(logs)
+            
+        #     ## save the model params
+        #     if (iter+1) % 5 == 0:
+        #         trainer.save_checkpoint()
+        #         print('=' * 80)
+        #         print(f'save model')
+
+    elif train_type == 'tSNE':
+
+        # optionally load pre-trained weights
+        if variant['path_to_weights'] is not None:
+            _path = variant['path_to_weights']
+            model_name = variant['model_name']
+            model_path = osp.join(_path, model_name)
+            assert osp.exists(model_path), 'the model is not exists'
+            model.load_state_dict(torch.load(model_path))
         
         training_data = CustomDataset(dataset_name, env_name, env_level, 
-            trajs=trajectories, max_len=K, eval_traj=eval_traj)
-        train_dataloader = DataLoader(training_data, batch_size=batch_size, shuffle=True)
+                trajs=trajectories, max_len=max_traj_len, eval_traj=eval_traj)
+        train_dataloader = DataLoader(training_data, batch_size=4096, shuffle=True, num_workers=4)
+
+
+        vistraj = VisualizeTraj(train_dataloader, model, device)
+        # BERT_task_embedding = vistraj.get_task_embedding()
+        tSNE_task_embedding = vistraj.visualize()
+
         
-        trainer = MaskTrainer(
-            model=model,
-            optimizer=optimizer,
-            batch_size=batch_size,
-            get_batch=get_batch,
-            scheduler=scheduler,
-            eval_fns=eval_fns,
-            ckpt_path=ckpt_path,
-            mask_batch_fn=mask_batch_fn,
-            train_dataloader=train_dataloader,
-            device=device
-        )
 
-
-    for iter in range(variant['max_iters']):
-        logs = trainer.train_iteration(num_steps=variant['num_steps_per_iter'], iter_num=iter+1, print_logs=True)
-        if log_to_wandb:
-            wandb.log(logs)
-        
-        ## save the model params
-        if (iter+1) % 2 == 0:
-            trainer.save_checkpoint()
-            print('=' * 50)
-            print(f'save model')
-
-    ## save the Bert model for 
-    # model = 
-    # PATH = './model.pth'
-    # model.load_state_dict(torch.load(PATH))
             
     
     print("\n---------------------Finish!!!----------------------------")
@@ -511,6 +409,9 @@ if __name__ == '__main__':
     # parser_cheetah.add_argument('--env_name', type=str, default='cheetah-dir') 
     # parser_cheetah.add_argument('--env_level', type=str, default='normal')
     
+    parser.add_argument('--train_type', type=str, default='pretrain', 
+        choices=['pretrain', 'tSNE'], help='pretrain type: train a BERT model,\
+                                        tSNE type: use a trained BERT model to visualize the task embedding')
     
     parser.add_argument('--mode', type=str, default='normal')  # normal for standard setting, delayed for sparse
     parser.add_argument('--model_type', type=str, default='dt')  # dt for decision transformer, bc for behavior cloning, be for decision bert
@@ -528,10 +429,11 @@ if __name__ == '__main__':
     parser.add_argument('--warmup_steps', type=int, default=10000)
 
     
-    parser.add_argument('--max_iters', type=int, default=10)
-    parser.add_argument('--num_steps_per_iter', '-ns', type=int, default=10000, help='how many batchs for training')
-    parser.add_argument('--batch_size', type=int, default=64)
-    parser.add_argument('--K', type=int, default=20)
+    # parser.add_argument('--max_iters', type=int, default=10)
+    # parser.add_argument('--num_steps_per_iter', '-ns', type=int, default=10000, help='how many batchs for training')
+    parser.add_argument('--epoch', type=int, default=50)
+    parser.add_argument('--batch_size', '-bs', type=int, default=64)
+    parser.add_argument('--max_traj_len', '-K', type=int, default=20)
     parser.add_argument('--pct_traj', type=float, default=1.)
     parser.add_argument('--num_eval_episodes', type=int, default=100)
 
@@ -539,6 +441,12 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--gpu_id', type=int, default=0, help='GPU id')
     parser.add_argument('--log_to_wandb', '-w', type=boolean_argument, default=False)
+
+    parser.add_argument('--save_epoch', type=int, default=10)
+    parser.add_argument('--normalize', type=bool, default=True)
+
+    parser.add_argument('--path_to_weights', '-p2w', type=str, default=None, help='the path of pretrained model')
+    parser.add_argument('--model_name', type=str, default='model.pth')
 
     args = parser.parse_args()
 

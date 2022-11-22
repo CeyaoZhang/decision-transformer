@@ -133,6 +133,7 @@ class Batch(ABC):
     def get_prediction_masks(self):
         """By default, predict everything that wan't present in the input"""
         # For last item prediction, the prediction masks will be exactly the opposite relative to the input masks
+        self.input_masks = self.get_input_masks()
         s_mask = 1 - self.input_masks["*"]["state"]
         a_mask = 1 - self.input_masks["*"]["action"]
         rtg_mask = 1 - self.input_masks["*"]["rtg"]
