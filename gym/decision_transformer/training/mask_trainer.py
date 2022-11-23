@@ -97,7 +97,7 @@ class MaskTrainer(Trainer):
         dones = dones.to(dtype=torch.int32, device=self.device)
         rtgs = rtgs.to(dtype=torch.float32, device=self.device)
         timesteps = timesteps.to(dtype=torch.int32, device=self.device)
-        attention_masks = attention_masks.to(dtype=torch.float32, device=self.device)
+        attention_masks = attention_masks.to(dtype=torch.int32, device=self.device)
         
         ## mask the batch data
         ## both input_masks and pred_masks are (Batch, Length)

@@ -105,7 +105,7 @@ class DecisionBERT(TrajectoryModel):
             self.cls_token = nn.Parameter(torch.zeros(1, 1, 3*hidden_size).to(self.device))
 
 
-    def forward(self, states, actions, rewards, returns_to_go, timesteps, attention_mask=None, output_cls=False):
+    def forward(self, states, actions, rewards, returns_to_go=None, timesteps=None, attention_mask=None, output_cls=False):
         '''
         states (B, L, Ds)
         attention_mask (B, L) if not None
@@ -115,7 +115,7 @@ class DecisionBERT(TrajectoryModel):
 
         if attention_mask is None:
             # attention mask for Bert: 1 if can be attended to, 0 if not
-            attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long)
+            attention_mask = torch.ones((batch_size, seq_length), dtype=torch.int32, device=self.device)
 
         # embed each modality with a different head
         state_embeddings = self.embed_state(states) ## (B, L, Dh self.hidden_size)

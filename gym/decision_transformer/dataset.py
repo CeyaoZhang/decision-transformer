@@ -266,6 +266,6 @@ class CustomDataset(Dataset):
             d = np.concatenate([np.ones((self.max_len - tlen), dtype=np.int32) * 2, d], axis=0)
             rtg = np.concatenate([np.zeros((self.max_len - tlen, 1), dtype=np.float32), rtg], axis=0) / self.scale
             timesteps = np.concatenate([np.zeros((self.max_len - tlen), dtype=np.int32), timesteps], axis=0)
-            mask = np.concatenate([np.zeros((self.max_len - tlen), dtype=np.float32), np.ones((tlen), dtype=np.float32)], axis=0)
+            mask = np.concatenate([np.zeros((self.max_len - tlen), dtype=np.int32), np.ones((tlen), dtype=np.int32)], axis=0)
 
         return [s, a, r, d, rtg, timesteps, mask], task_idx
