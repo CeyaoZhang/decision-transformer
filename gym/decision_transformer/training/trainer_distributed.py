@@ -4,18 +4,20 @@ import torch
 import time
 from torch.nn.parallel import DistributedDataParallel as DDP
 import os
+from tqdm import tqdm
+import wandb
 
 class Distributed_MaskTrainer:
 
-    def __init__(self, variant, model, train_data, optimizer, gpu_id,
-        scheduler=None, eval_fns=None, loss_fn=None,
+    def __init__(self, variant, model, train_dataloader, optimizer, gpu_id,
+        scheduler=None, eval_fns=None, loss_fn=None, mask_batch_fn=None
         ):
-        self.variant = varaint
+        self.variant = variant
         self.gpu_id = gpu_id
         self.model = model.to(gpu_id)
         
         self.optimizer = optimizer
-        self.train_data = train_data
+        self.train_dataloader = train_dataloader
 
         self.loss_fn = loss_fn
         
@@ -25,10 +27,16 @@ class Distributed_MaskTrainer:
         self.diagnostics = dict()
         self.start_time = time.time()
         
-        self.model = DDP(model, device_ids=[gpu_id])
+        self.model = DDP(model, device_ids=[gpu_id], find_unused_parameters=True)
         
-        log_to_wandb = variant.get('log_to_wandb', False)
-        self.log_to_wandb = log_to_wandb
+        self.log_to_wandb = variant['log_to_wandb']
+        
+        self.mask_batch_fn = mask_batch_fn
+    
+    def save_model(self, path):
+        model = self.model.module if hasattr(self.model, "module") else self.model
+        print('save at ' + path)
+        torch.save(model.state_dict(), path)
         
     def train_iteration(self):
 
@@ -37,25 +45,41 @@ class Distributed_MaskTrainer:
         
         train_step = 0 
         self.model.train()
-
+        
         for epoch in range(self.variant['epoch']):
-            self.train_data.sampler.set_epoch(epoch)
+            self.train_dataloader.sampler.set_epoch(epoch)
             train_losses = [] ## the loss in one iteration
             train_start = time.time()
-            for i, data in enumerate(train_loader):
-                self.train_step(data) ## the loss in one step
-                train_losses.append(logs['training/total_error'])
-                
-                if self.scheduler is not None:
-                    self.scheduler.step()
-                    
-                for k in self.diagnostics:
-                    logs[k] = self.diagnostics[k]
-                    
-                if self.log_to_wandb:
-                    wandb.log(outputs, step=train_step)
-                    
-                train_step += 1
+            if self.gpu_id == 0:
+                for i, data in enumerate(tqdm(self.train_dataloader)):
+                    self.train_step(data) ## the loss in one step
+                    train_losses.append(self.diagnostics['training/total_error'])
+
+                    if self.scheduler is not None:
+                        self.scheduler.step()
+
+                    for k in self.diagnostics:
+                        logs[k] = self.diagnostics[k]
+
+                    if self.gpu_id == 0 and self.log_to_wandb:
+                        wandb.log(logs, step=train_step)
+
+                    train_step += 1
+            else:
+                for i, data in enumerate(self.train_dataloader):
+                    self.train_step(data) ## the loss in one step
+                    train_losses.append(self.diagnostics['training/total_error'])
+
+                    if self.scheduler is not None:
+                        self.scheduler.step()
+
+                    for k in self.diagnostics:
+                        logs[k] = self.diagnostics[k]
+
+                    if self.gpu_id == 0 and self.log_to_wandb:
+                        wandb.log(logs, step=train_step)
+
+                    train_step += 1
         
             # get epoch logs
             epoch_logs['time/training'] = time.time() - train_start
@@ -74,20 +98,38 @@ class Distributed_MaskTrainer:
             epoch_logs['training/train_loss_mean'] = np.mean(train_losses) ## the mean in each iter
             epoch_logs['training/train_loss_std'] = np.std(train_losses)
             
-            if self.log_to_wandb:
+            if self.gpu_id == 0 and self.log_to_wandb:
                 wandb.log(epoch_logs, step=epoch)
+                
+            if self.gpu_id == 0 and (epoch+1) % self.variant['save_epoch']==0:
+                path = 'epoch ' + str(epoch) + '.pt'
+                if self.log_to_wandb:
+                    save_path = os.path.join(wandb.run.dir, 'models')
+                    if not os.path.exists(save_path):
+                        os.makedirs(save_path)
+                    path = os.path.join(save_path, 'epoch_' + str(epoch) + '.pt')               
+                    self.save_model(path)
             
-            print('=' * 80)
-            print(f'Iteration {epoch}')
-            for k, v in epoch_logs.items():
-                print(f'{k}: {v}')
+            if self.gpu_id == 0:
+                print('=' * 80)
+                print(f'Iteration {epoch}')
+                for k, v in epoch_logs.items():
+                    print(f'{k}: {v}')
 
     def train_step(self, data):
         
         states, actions, rewards, dones, \
             rtg, timesteps, attention_mask = data
         
-        input_masks, pred_masks = self.mask_batch_fn.get_input_masks(), self.mask_batch_fn.get_prediction_masks()
+        states = states.to(dtype=torch.float32, device=self.gpu_id)
+        actions= actions.to(dtype=torch.float32, device=self.gpu_id)
+        rewards = rewards.to(dtype=torch.float32, device=self.gpu_id)
+        dones = dones.to(dtype=torch.int32, device=self.gpu_id)
+        rtg = rtg.to(dtype=torch.float32, device=self.gpu_id)
+        timesteps = timesteps.to(dtype=torch.int32, device=self.gpu_id)
+        attention_mask = attention_mask.to(dtype=torch.float32, device=self.gpu_id)
+        
+        input_masks, pred_masks = self.mask_batch_fn.get_all_masks()
         
         state_inputs = states * input_masks["*"]["state"].unsqueeze(2) ## make input_masks from (B,L) to (B, L, 1) and will broadcast to states
         action_inputs = actions * input_masks["*"]["action"].unsqueeze(2)
@@ -106,7 +148,7 @@ class Distributed_MaskTrainer:
         state_target = torch.clone(states * state_preds_masks)
         state_target = state_target.reshape(-1, state_dim)[attention_mask.reshape(-1) > 0]
         
-        state_loss = torch.sum((state_preds - state_target)**2) / torch.sum(state_preds_masks)
+        state_loss = torch.sum((state_preds - state_target)**2) / torch.sum(torch.abs(state_preds) > 0)
 
         action_preds_masks = pred_masks["*"]["action"].unsqueeze(2)
         action_preds = action_preds * action_preds_masks
@@ -116,7 +158,7 @@ class Distributed_MaskTrainer:
         action_target = torch.clone(actions * action_preds_masks)
         action_target = action_target.reshape(-1, act_dim)[attention_mask.reshape(-1) > 0]
         
-        action_loss = torch.sum((action_preds - action_target)**2) / torch.sum(action_preds_masks)
+        action_loss = torch.sum((action_preds - action_target)**2) / torch.sum(torch.abs(action_preds) > 0)
 
         reward_preds_masks = pred_masks["*"]["reward"].unsqueeze(2)
         reward_preds = reward_preds * reward_preds_masks
@@ -125,7 +167,7 @@ class Distributed_MaskTrainer:
         reward_target = torch.clone(rewards * reward_preds_masks)
         reward_target = reward_target.reshape(-1, 1)[attention_mask.reshape(-1) > 0]
         
-        reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(reward_preds_masks)
+        reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(torch.abs(reward_preds) > 0)
         
         total_loss = state_loss + action_loss + reward_loss
         
