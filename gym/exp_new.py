@@ -29,7 +29,7 @@ from decision_transformer.training.seq_trainer import SequenceTrainer
 from decision_transformer.training.mask_trainer import MaskTrainer ##
 from decision_transformer.training.mask_batches import RandomPred
 
-from decision_transformer.dataset import CustomDataset, get_traj_from_dataset, eval_traj 
+from decision_transformer.base_dataset import CustomDataset, get_traj_from_dataset, eval_traj 
 from torch.utils.data import DataLoader
 
 from decision_transformer.evaluation.visualize_traj import VisualizeTraj
