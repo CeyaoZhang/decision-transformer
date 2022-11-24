@@ -177,7 +177,8 @@ class MaskTrainer(Trainer):
             self.diagnostics['training/action_error'] = action_loss.detach().cpu().item()
             # self.diagnostics['training/rtg_error'] = rtg_loss.detach().cpu().item()
             self.diagnostics['training/reward_error'] = reward_loss.detach().cpu().item()
-
+            self.diagnostics['training/total_error'] = total_loss.detach().cpu().item()
+            
         return total_loss.detach().cpu().item()
 
 

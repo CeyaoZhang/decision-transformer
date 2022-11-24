@@ -102,7 +102,7 @@ def experiment(
     # reward_mean, reward_std = np.mean(rewards, axis=0), np.std(rewards, axis=0) + 1e-6
 
 
-    max_traj_len = variant['max_traj_len']
+    K = variant['K']
     batch_size = variant['batch_size']
     num_eval_episodes = variant['num_eval_episodes']
     pct_traj = variant.get('pct_traj', 1.)
@@ -128,7 +128,7 @@ def experiment(
     gpu_id = variant['gpu_id']
     os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 
-    def get_batch(batch_size=256, max_len=max_traj_len):
+    def get_batch(batch_size=256, max_len=K):
         batch_inds = np.random.choice(
             np.arange(num_trajectories),
             size=batch_size,
@@ -246,7 +246,7 @@ def experiment(
     
     normalize=variant['normalize']
     training_data = CustomDataset(dataset_name, env_name, env_level, 
-                trajs=trajectories, max_len=max_traj_len, eval_traj=eval_traj, normalize=normalize)
+                trajs=trajectories, max_len=K, eval_traj=eval_traj, normalize=normalize)
     
     train_dataloader = DataLoader(training_data, batch_size=batch_size, 
                 shuffle=True, num_workers=4, drop_last=True, pin_memory=True,)
@@ -255,7 +255,7 @@ def experiment(
         model = DecisionTransformer(
             state_dim=state_dim,
             act_dim=act_dim,
-            max_length=max_traj_len,
+            max_length=K,
             max_ep_len=max_ep_len,
             hidden_size=variant['embed_dim'],
             n_layer=variant['n_layer'],
@@ -270,7 +270,7 @@ def experiment(
         model = MLPBCModel(
             state_dim=state_dim,
             act_dim=act_dim,
-            max_length=max_traj_len,
+            max_length=K,
             hidden_size=variant['embed_dim'],
             n_layer=variant['n_layer'],
         )
@@ -278,7 +278,7 @@ def experiment(
         model = DecisionBERT(
             state_dim=state_dim,
             act_dim=act_dim,
-            max_length=max_traj_len,
+            max_length=K,
             max_ep_len=max_ep_len,
             hidden_size=variant['embed_dim'],
             num_hidden_layers=variant['n_layer'],
@@ -338,7 +338,7 @@ def experiment(
             )
         elif model_type == 'de':
 
-            mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=max_traj_len, device=device)
+            mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
 
             trainer = MaskTrainer(
                 variant=variant,
@@ -355,16 +355,7 @@ def experiment(
             )
 
         trainer.train_iteration()
-        # for iter in range(variant['max_iters']):
-        #     logs = trainer.train_iteration(num_steps=variant['num_steps_per_iter'], iter_num=iter+1, print_logs=True)
-        #     if log_to_wandb:
-        #         wandb.log(logs)
-            
-        #     ## save the model params
-        #     if (iter+1) % 5 == 0:
-        #         trainer.save_checkpoint()
-        #         print('=' * 80)
-        #         print(f'save model')
+
 
     elif train_type == 'tSNE':
 
@@ -377,7 +368,7 @@ def experiment(
             model.load_state_dict(torch.load(model_path))
         
         training_data = CustomDataset(dataset_name, env_name, env_level, 
-                trajs=trajectories, max_len=max_traj_len, eval_traj=eval_traj)
+                trajs=trajectories, max_len=K, eval_traj=eval_traj)
         train_dataloader = DataLoader(training_data, batch_size=4096, shuffle=True, num_workers=4)
 
 
@@ -433,7 +424,7 @@ if __name__ == '__main__':
     # parser.add_argument('--num_steps_per_iter', '-ns', type=int, default=10000, help='how many batchs for training')
     parser.add_argument('--epoch', type=int, default=50)
     parser.add_argument('--batch_size', '-bs', type=int, default=64)
-    parser.add_argument('--max_traj_len', '-K', type=int, default=20)
+    parser.add_argument('--K', type=int, default=20, help="max_traj_len")
     parser.add_argument('--pct_traj', type=float, default=1.)
     parser.add_argument('--num_eval_episodes', type=int, default=100)
 

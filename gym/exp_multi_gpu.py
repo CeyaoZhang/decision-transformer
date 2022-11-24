@@ -19,13 +19,18 @@ from decision_transformer.training.act_trainer import ActTrainer
 from decision_transformer.training.seq_trainer import SequenceTrainer
 from decision_transformer.training.trainer_distributed import Distributed_MaskTrainer ##
 from decision_transformer.training.mask_batches import RandomPred
+# from decision_transformer.dataset import eval_traj, get_trajectory_CheetahWorld, CustomDataset
+from decision_transformer.base_dataset import eval_traj, get_traj_from_dataset, CustomDataset
 
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from decision_transformer.dataset import eval_traj, get_trajectory_CheetahWorld, CustomDataset
-
 from torch.distributed import init_process_group, destroy_process_group
 import torch.multiprocessing as mp
+
+from distutils.util import strtobool
+def boolean_argument(value):
+    """Convert a string value to boolean."""
+    return bool(strtobool(value))
 
 def ddp_setup(rank, world_size):
     """
@@ -55,6 +60,7 @@ def experiment(
         variant,
 ):
     ddp_setup(rank, world_size)
+
     
     #device = variant.get('device', 'cuda')
     log_to_wandb = variant.get('log_to_wandb', False)
@@ -184,7 +190,7 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, default='normal')  # normal for standard setting, delayed for sparse
     parser.add_argument('--K', type=int, default=200)
     parser.add_argument('--pct_traj', type=float, default=1.)
-    parser.add_argument('--batch_size', type=int, default=512)
+    parser.add_argument('--batch_size', '-bs', type=int, default=512)
     parser.add_argument('--model_type', type=str, default='de')  # dt for decision transformer, bc for behavior cloning, be for decision bert
     parser.add_argument('--embed_dim', type=int, default=160)
     parser.add_argument('--n_layer', type=int, default=6)
@@ -197,8 +203,8 @@ if __name__ == '__main__':
     parser.add_argument('--num_eval_episodes', type=int, default=100)
     parser.add_argument('--epoch', type=int, default=200)
     parser.add_argument('--save_epoch', type=int, default=50)
-    parser.add_argument('--normalize', type=bool, default=True)
-    parser.add_argument('--log_to_wandb', '-w', type=bool, default=False)
+    parser.add_argument('--normalize', type=boolean_argument, default=True)
+    parser.add_argument('--log_to_wandb', '-w', type=boolean_argument, default=False)
     parser.add_argument('--input_type', '-it', type=str, default='cat', choices=['seq', 'cat'], 
                             help='input tuples can be sequence type (s,a,r)+time  or concat type cat(s,a,r)') 
     
@@ -209,10 +215,16 @@ if __name__ == '__main__':
     
     world_size = args.world_size
     max_gpu_num = torch.cuda.device_count()
+    print(f"max_gpu_num: {max_gpu_num}")
     assert world_size <= max_gpu_num, "The world size should not larger than the your device GPU number"
     
     variant = vars(args)
-    trajectories = get_trajectory_CheetahWorld(variant['env_name'], variant['env_level'], variant['root'], variant['dataset'])
+    for (key, value) in variant.items():
+        print(f"{key}: {value}")
+    
+    # trajectories = get_trajectory_CheetahWorld(, variant['dataset'], variant['env_name'], variant['env_level'], variant['root'])
+    trajectories, _ = get_traj_from_dataset(variant['dataset'], variant['env_name'], variant['env_level'], variant['model_type'], variant['root'])
+    
     training_data = CustomDataset(variant['dataset'], variant['env_name'], variant['env_level'], 
         trajs=trajectories, max_len=variant['K'], eval_traj=eval_traj, normalize=variant['normalize'])
     

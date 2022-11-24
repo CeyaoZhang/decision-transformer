@@ -62,7 +62,7 @@ def eval_traj(env_name:str, env_level:str, trajs:List[Dict[str, np.array]], idx_
     return states, actions, rewards, returns, traj_lens, num_timesteps
 
 
-def get_traj_from_dataset(dataset_name, env_name, env_level, model_type)->List[Dict[str, np.array]]:
+def get_traj_from_dataset(dataset_name, env_name, env_level, model_type, root='./data')->List[Dict[str, np.array]]:
     if dataset_name == 'D4RL':
         if env_name == 'hopper':
             env = gym.make('Hopper-v3')
@@ -93,7 +93,7 @@ def get_traj_from_dataset(dataset_name, env_name, env_level, model_type)->List[D
 
         # load dataset
         # dataset_path = f'data/{dataset}/{env_name}-{env_level}-v2.pkl'
-        dataset_path = osp.join("data", dataset_name, f"{env_name}-{env_level}-v2.pkl")
+        dataset_path = osp.join(root, dataset_name, f"{env_name}-{env_level}-v2.pkl")
         assert osp.exists(dataset_path), 'The path is not exist!!!'
         with open(dataset_path, 'rb') as f:
             ## trajectories is a list containing 1K path.
@@ -144,7 +144,7 @@ def get_traj_from_dataset(dataset_name, env_name, env_level, model_type)->List[D
             return trajectories
         
         trajectories = []
-        dataset_path = osp.join("data", dataset_name)
+        dataset_path = osp.join(root, dataset_name)
         if env_name == 'all': 
             for _env_name in os.listdir(dataset_path):
                 env_name_path = osp.join(dataset_path, _env_name)

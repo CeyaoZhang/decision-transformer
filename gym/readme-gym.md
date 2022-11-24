@@ -31,9 +31,9 @@ python experiment.py --env_name hopper --env_level medium --model_type dt
 
 Adding `-w True` will log results to Weights and Biases.
 
-## My example
+# My example
 
-### use the D4RL dataset
+## use the D4RL dataset
 ```python
 python experiment.py --env_name halfcheetah --env_level expert --model_type dt -w True
 
@@ -43,20 +43,26 @@ nohup python -u experiment.py --env_name halfcheetah --env_level expert --model_
 nohup python -u experiment.py --env_name halfcheetah --env_level expert --model_type de --max_iters 30 -it seq -w True > de_halfcheetah_expert_30iter_seq_w.log 2>&1 &
 ```
 
-### use my CheetahWorld-v2 data
+## use my CheetahWorld-v2 data
 
 You can download the dataset from [CheetahWorld-v2](https://drive.google.com/drive/folders/1g0u7dFNf0lSC8K66yNNR0aprM0yBDrT6?usp=share_link).
 
-#### toy model
-```python
-nohup python -u experiment.py --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --max_iters 30 --K 200 -it cat -w True  > de_cheetah-dir_normal_30iter_cat_w.log 2>&1 & 
 
-nohup python -u experiment.py --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --max_iters 30 --K 200 -it seq -w True  > de_cheetah-dir_normal_30iter_seq_w.log 2>&1 & 
+## Use One GPU 
+
+### Try single gpu version
+```
+python exp_single_gpu.py --gpu_id 0 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 512 -K 200 -w True
 ```
 
-#### Big Model
-```python
-nohup python -u experiment.py --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --max_iters 30 --K 200 -it cat -w True  > de_cheetah-dir_normal_30iter_cat_w.log 2>&1 & 
+### Try multi gpu version with world_size=1
+```
+python exp_multi_gpu.py --world_size 1 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 512 -K 200 -w True
+```
 
-nohup python -u experiment.py --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --max_iters 30 --K 200 -it seq -w True  > de_cheetah-dir_normal_30iter_seq_w.log 2>&1 & 
+## Use Multi GPU 
+
+### Try multi gpu version with world_size
+```
+python exp_multi_gpu.py --world_size 2 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 512 -K 200 -w True
 ```
