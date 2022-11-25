@@ -201,8 +201,8 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
     parser.add_argument('--warmup_epochs', type=int, default=5)
     parser.add_argument('--num_eval_episodes', type=int, default=100)
-    parser.add_argument('--epoch', type=int, default=200)
-    parser.add_argument('--save_epoch', type=int, default=50)
+    parser.add_argument('--epoch', type=int, default=80)
+    parser.add_argument('--save_epoch', type=int, default=20)
     parser.add_argument('--normalize', type=boolean_argument, default=True)
     parser.add_argument('--log_to_wandb', '-w', type=boolean_argument, default=False)
     parser.add_argument('--input_type', '-it', type=str, default='cat', choices=['seq', 'cat'], 
@@ -218,7 +218,8 @@ if __name__ == '__main__':
     print(f"max_gpu_num: {max_gpu_num}")
     assert world_size <= max_gpu_num, "The world size should not larger than the your device GPU number"
     
-    args.learning_rate = args.learning_rate * np.sqrt(args.world_size)
+    import math
+    args.learning_rate = args.learning_rate * math.ceil(np.sqrt(args.world_size))
     
     variant = vars(args)
     for (key, value) in variant.items():
