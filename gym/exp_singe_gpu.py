@@ -300,7 +300,7 @@ def experiment(
 
         model = model.to(device=device)
 
-        warmup_steps = variant['warmup_steps']
+        warmup_steps = variant['warmup_epochs']
         optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=variant['learning_rate'],
@@ -417,7 +417,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--learning_rate', '-lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
-    parser.add_argument('--warmup_steps', type=int, default=10000)
+    parser.add_argument('--warmup_epochs', type=int, default=5)
 
     
     # parser.add_argument('--max_iters', type=int, default=10)

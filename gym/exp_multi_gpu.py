@@ -141,7 +141,7 @@ def experiment(
         raise NotImplementedError
     
     # optimizer and scheduler
-    warmup_steps = variant['warmup_steps']
+    warmup_steps = variant['warmup_epochs']
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=variant['learning_rate'],
@@ -199,7 +199,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--learning_rate', '-lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
-    parser.add_argument('--warmup_steps', type=int, default=10000)
+    parser.add_argument('--warmup_epochs', type=int, default=5)
     parser.add_argument('--num_eval_episodes', type=int, default=100)
     parser.add_argument('--epoch', type=int, default=200)
     parser.add_argument('--save_epoch', type=int, default=50)
@@ -218,11 +218,12 @@ if __name__ == '__main__':
     print(f"max_gpu_num: {max_gpu_num}")
     assert world_size <= max_gpu_num, "The world size should not larger than the your device GPU number"
     
+    args.learning_rate = args.learning_rate * np.sqrt(args.world_size)
+    
     variant = vars(args)
     for (key, value) in variant.items():
         print(f"{key}: {value}")
     
-    # trajectories = get_trajectory_CheetahWorld(, variant['dataset'], variant['env_name'], variant['env_level'], variant['root'])
     trajectories, _ = get_traj_from_dataset(variant['dataset'], variant['env_name'], variant['env_level'], variant['model_type'], variant['root'])
     
     training_data = CustomDataset(variant['dataset'], variant['env_name'], variant['env_level'], 

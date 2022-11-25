@@ -55,9 +55,6 @@ class Distributed_MaskTrainer:
                     self.train_step(data) ## the loss in one step
                     train_losses.append(self.diagnostics['training/total_error'])
 
-                    if self.scheduler is not None:
-                        self.scheduler.step()
-
                     for k in self.diagnostics:
                         logs[k] = self.diagnostics[k]
 
@@ -70,16 +67,19 @@ class Distributed_MaskTrainer:
                     self.train_step(data) ## the loss in one step
                     train_losses.append(self.diagnostics['training/total_error'])
 
-                    if self.scheduler is not None:
-                        self.scheduler.step()
+                    #if self.scheduler is not None:
+                    #    self.scheduler.step()
 
-                    for k in self.diagnostics:
-                        logs[k] = self.diagnostics[k]
+                    #for k in self.diagnostics:
+                    #    logs[k] = self.diagnostics[k]
 
-                    if self.gpu_id == 0 and self.log_to_wandb:
-                        wandb.log(logs, step=train_step)
+                    #if self.gpu_id == 0 and self.log_to_wandb:
+                    #    wandb.log(logs, step=train_step)
 
                     train_step += 1
+                    
+            if self.scheduler is not None:
+                self.scheduler.step()
         
             # get epoch logs
             epoch_logs['time/training'] = time.time() - train_start
