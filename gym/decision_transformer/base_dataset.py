@@ -206,7 +206,17 @@ class CustomDataset(Dataset):
             self.action_mean, self.action_std = np.mean(actions, axis=0), np.std(actions, axis=0) + 1e-6
             rewards = np.concatenate(rewards, axis=0) ## np.array (1M, 1)
             self.reward_mean, self.reward_std = np.mean(rewards, axis=0), np.std(rewards, axis=0) + 1e-6
-            
+
+            self.data_info = {'normalize':
+                                {
+                                    "state_mean" : self.state_mean.tolist(), 
+                                    "state_std": self.state_std.tolist(),
+                                    "action_mean": self.action_mean.tolist(), 
+                                    "action_std": self.action_std.tolist(),
+                                    "reward_mean": self.reward_mean.tolist(),
+                                    "reward_std": self.reward_std.tolist(),
+                                }
+                            }
         
     # Length of the Dataset
     def __len__(self):

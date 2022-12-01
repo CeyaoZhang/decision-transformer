@@ -75,10 +75,10 @@ class MaskTrainer(Trainer):
                 wandb.log(epoch_logs)
 
             # save the model params
-            if (epoch+1) % 5 == 0:
+            if (epoch+1) % self.variant['save_epoch'] == 0:
                 self.save_checkpoint()
                 print('=' * 80)
-                print(f'save model')
+                print(f'save {epoch+1} model')
 
     def train_step(self, data):
 
@@ -120,6 +120,7 @@ class MaskTrainer(Trainer):
         state_preds, action_preds, reward_preds = self.model(
             state_inputs, action_inputs, reward_inputs, rtgs, timesteps, attention_masks,
         )
+        # state_preds, action_preds, reward_preds = outputs['preds']
 
         ## 
         state_preds_masks = pred_masks["*"]["state"].unsqueeze(2)

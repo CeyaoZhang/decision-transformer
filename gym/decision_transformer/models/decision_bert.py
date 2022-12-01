@@ -71,7 +71,7 @@ class DecisionBERT(TrajectoryModel):
             )
 
         ## self.bert = BertForMaskedLM(config) ## without use the pretrained model
-        self.bert = BertModel(config, add_pooling_layer=False)
+        self.bert = BertModel(config, add_pooling_layer=False) # add_pooling_layer=False
         #print(f'total paras: {self.bert.num_parameters()}')
         #print('=' * 80)
         
@@ -95,20 +95,28 @@ class DecisionBERT(TrajectoryModel):
         elif self.input_type == 'cat':
             self.embed_timestep = nn.Embedding(max_ep_len, 3*hidden_size) ## got it
             self.embed_ln = nn.LayerNorm(3*hidden_size)
-            self.predict_state = nn.Linear(3*hidden_size, self.state_dim)
+            # self.predict_state = nn.Linear(3*hidden_size, self.state_dim)
+            self.predict_state = nn.Sequential(
+                *([nn.Linear(3*hidden_size, self.state_dim)] + ([nn.Tanh()] if action_tanh else []))
+            )
             self.predict_action = nn.Sequential(
                 *([nn.Linear(3*hidden_size, self.act_dim)] + ([nn.Tanh()] if action_tanh else []))
             )
-            #self.predict_return = nn.Linear(hidden_size, 1)
-            self.predict_reward = nn.Linear(3*hidden_size, 1)
+            #self.predict_return = nn.Linear(3*hidden_size, 1)
+            self.predict_reward = nn.Sequential(
+                *([nn.Linear(3*hidden_size, 1)] + ([nn.Tanh()] if action_tanh else []))
+            )
             
             self.cls_token = nn.Parameter(torch.zeros(1, 1, 3*hidden_size).to(self.device))
 
 
-    def forward(self, states, actions, rewards, returns_to_go=None, timesteps=None, attention_mask=None, output_cls=False):
+    def forward(self, states, actions, rewards, 
+                returns_to_go=None, timesteps=None, attention_mask=None, 
+                return_outputs=False):
         '''
         states (B, L, Ds)
         attention_mask (B, L) if not None
+        pooling: cls, mean, max
         '''
 
         batch_size, seq_length = states.shape[0], states.shape[1]
@@ -122,7 +130,8 @@ class DecisionBERT(TrajectoryModel):
         action_embeddings = self.embed_action(actions)
         # returns_embeddings = self.embed_return(returns_to_go)
         rewards_embeddings = self.embed_reward(rewards)
-
+        
+        ## this makes the sequence look like (s_1, a_1, r_1, s_2, a_2, r_2,...) (B, 3*seq, D)
         if self.input_type == 'seq':
             # time embeddings are treated similar to positional embeddings
             if self.time_embed:
@@ -132,8 +141,6 @@ class DecisionBERT(TrajectoryModel):
                 # returns_embeddings = returns_embeddings + time_embeddings
                 rewards_embeddings = rewards_embeddings + time_embeddings
         
-            ## this makes the sequence look like (s_1, a_1, r_1, s_2, a_2, r_2,...)
-            ## (B, 3*seq, D)
             stacked_inputs = torch.stack(
                 (state_embeddings, action_embeddings, rewards_embeddings), dim=1
             ).permute(0, 2, 1, 3).reshape(batch_size, 3*seq_length, self.hidden_size) 
@@ -155,9 +162,8 @@ class DecisionBERT(TrajectoryModel):
             ## (B, 1+3*L)
             stacked_attention_mask = torch.cat([torch.ones(batch_size, 1).to(self.device), stacked_attention_mask], dim=1)
             
-
+        ## this makes the sequence look like (cat(s_1, a_1, r_1), cat(s_2, a_2, r_2), ...)
         elif self.input_type == 'cat':
-            ## this makes the sequence look like (cat(s_1, a_1, r_1), cat(s_2, a_2, r_2), ...)
             stacked_inputs = torch.concat(
                 (state_embeddings, action_embeddings, rewards_embeddings), dim=2
             )
@@ -173,36 +179,52 @@ class DecisionBERT(TrajectoryModel):
             ## (B, 1+L)
             stacked_attention_mask = torch.cat([torch.ones(batch_size, 1).to(self.device), attention_mask], dim=1)
 
-
- 
         # we feed in the input embeddings (not word indices as in NLP) to the model
         transformer_outputs = self.bert(
             inputs_embeds=stacked_inputs,
             attention_mask=stacked_attention_mask,
         )
         # drop cls term
-        x = transformer_outputs['last_hidden_state'][:, 1:]
-        cls_output = transformer_outputs['last_hidden_state'][:, 0]
+        outputs = transformer_outputs['last_hidden_state'][:, 1:] ## outputs [B,L,D]
+        cls_output = transformer_outputs['last_hidden_state'][:,0] ## cls_output [B,D]
+        # cls_output = transformer_outputs['pooler_output']
 
         if self.input_type == 'seq':
-            ## x (B, 3*L, D)
-            x = x.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
+            ## outputs (B, 3*L, D)
+            ## seq_outputs (B, 3, L, D)
+            seq_outputs = outputs.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
 
-            state_preds = self.predict_state(x[:,0])     
-            action_preds = self.predict_action(x[:,1]) 
-            reward_preds = self.predict_reward(x[:,2])
+            state_preds = self.predict_state(seq_outputs[:,0])     
+            action_preds = self.predict_action(seq_outputs[:,1]) 
+            reward_preds = self.predict_reward(seq_outputs[:,2])
 
         elif self.input_type == 'cat':
-            ## (B, L, 3*D) 
+            ## outputs (B, L, 3*D) 
             ## direct pred s,a,r from the 3*D token
-            state_preds = self.predict_state(x)     
-            action_preds = self.predict_action(x) 
-            reward_preds = self.predict_reward(x)
+            state_preds = self.predict_state(outputs)     
+            action_preds = self.predict_action(outputs) 
+            reward_preds = self.predict_reward(outputs)
 
-        if output_cls:
-            return (state_preds, action_preds, reward_preds), cls_output
+        if return_outputs:
+            return (state_preds, action_preds, reward_preds), (outputs, cls_output)
         else:
             return state_preds, action_preds, reward_preds
+
+    def get_traj_embedding(self, 
+            outputs:torch.tensor, 
+            cls_output:torch.tensor, 
+            pooling='cls')->torch.tensor:
+
+        if pooling == 'cls':
+            traj_embed = cls_output
+        elif pooling == 'mean':
+            traj_embed = torch.mean(outputs, dim=1)
+        elif pooling == 'max':
+            traj_embed = torch.max(outputs, dim=1)[0]
+
+        return traj_embed
+        
+
 
 # where we use mask token as the mask for input
 # can be used for

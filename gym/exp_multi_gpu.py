@@ -4,7 +4,7 @@ import torch
 import wandb
 
 import argparse
-import pickle
+import json
 import random
 import os
 import sys
@@ -39,7 +39,8 @@ def ddp_setup(rank, world_size):
         world_size: Total number of processes
     """
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "8892"
+    os.environ["MASTER_PORT"] = "10086" ## each exec should use different port
+    # os.environ['CUDA_VISIBLE_DEVICES'] = "1"
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
 def prepare_dataloader(dataset: Dataset, batch_size: int):
@@ -55,7 +56,6 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
 def experiment(
         rank,
         world_size,
-        training_data,
         exp_prefix,
         variant,
 ):
@@ -94,6 +94,12 @@ def experiment(
     #    trajs=trajectories, max_len=K, eval_traj=eval_traj)
     
     # get data
+    # trajectories = get_trajectory_CheetahWorld(, variant['dataset'], variant['env_name'], variant['env_level'], variant['root'])
+    trajectories, _ = get_traj_from_dataset(variant['dataset'], variant['env_name'], variant['env_level'], variant['model_type'], variant['root'])
+    
+    training_data = CustomDataset(variant['dataset'], variant['env_name'], variant['env_level'], 
+        trajs=trajectories, max_len=variant['K'], eval_traj=eval_traj, normalize=variant['normalize'])
+    
     train_dataloader = prepare_dataloader(training_data, variant['batch_size'])
     
     # get model
@@ -164,18 +170,29 @@ def experiment(
         eval_fns=None,
         mask_batch_fn=mask_batch_fn,
     )
+
+
     if rank == 0:
         if log_to_wandb:
             wandb.init(
                 name=exp_prefix,
                 group=group_name,
-                project='decision-bert',
+                project='decision-bert', ## your project name
                 config=variant,
                 entity="porl" ## your wandb group name
             )
             # wandb.watch(model)  # wandb has some bug
 
-    #for iter in range(variant['epoch']):
+            ## save the data info in order to provide normalize info to the downstream tasks
+            save_path = os.path.join(wandb.run.dir, 'models')
+            if not os.path.exists(save_path):
+                os.makedirs(save_path)
+            data_info_path = os.path.join(save_path, 'data_info.json')
+            data_info = training_data.data_info
+            data_info['task_embed_size'] = model.cls_token.shape[-1]
+            with open(data_info_path, 'w') as f:
+                json.dump(data_info, f, indent=4)
+
     trainer.train_iteration()
             
     destroy_process_group()
@@ -195,7 +212,7 @@ if __name__ == '__main__':
     parser.add_argument('--embed_dim', type=int, default=160)
     parser.add_argument('--n_layer', type=int, default=6)
     parser.add_argument('--n_head', type=int, default=4)
-    parser.add_argument('--activation_function', type=str, default='relu')
+    parser.add_argument('--activation_function', '-acf', type=str, default='relu')
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--learning_rate', '-lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
@@ -208,24 +225,20 @@ if __name__ == '__main__':
     parser.add_argument('--input_type', '-it', type=str, default='cat', choices=['seq', 'cat'], 
                             help='input tuples can be sequence type (s,a,r)+time  or concat type cat(s,a,r)') 
     
-    parser.add_argument('--world_size', type=int, default=8) # use how many gpus to distribute
+    parser.add_argument('--world_size', '-ws', type=int, default=8) # use how many gpus to distribute
     parser.add_argument('--root', type=str, default='./data', help='dataset path')
     
     args = parser.parse_args()
+    variant = vars(args)
+    
+    for (key, value) in variant.items():
+        print(f"{key}: {value}")
+
     
     world_size = args.world_size
     max_gpu_num = torch.cuda.device_count()
     print(f"max_gpu_num: {max_gpu_num}")
     assert world_size <= max_gpu_num, "The world size should not larger than the your device GPU number"
     
-    variant = vars(args)
-    for (key, value) in variant.items():
-        print(f"{key}: {value}")
-    
-    # trajectories = get_trajectory_CheetahWorld(, variant['dataset'], variant['env_name'], variant['env_level'], variant['root'])
-    trajectories, _ = get_traj_from_dataset(variant['dataset'], variant['env_name'], variant['env_level'], variant['model_type'], variant['root'])
-    
-    training_data = CustomDataset(variant['dataset'], variant['env_name'], variant['env_level'], 
-        trajs=trajectories, max_len=variant['K'], eval_traj=eval_traj, normalize=variant['normalize'])
-    
-    mp.spawn(experiment, args=(world_size, training_data, 'gym', variant), nprocs=world_size)
+
+    mp.spawn(experiment, args=(world_size, 'gym', variant), nprocs=world_size)

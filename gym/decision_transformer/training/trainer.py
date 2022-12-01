@@ -31,7 +31,7 @@ class Trainer:
         model = self.model.module if hasattr(self.model, "module") else self.model
         # for param_key in model.state_dict():
         #     print(param_key, "\t", model.state_dict()[param_key].size())
-        logger.info("saving %s", self.ckpt_path)
+        # logger.info("saving %s", self.ckpt_path)
         torch.save(model.state_dict(), osp.join(self.ckpt_path, 'model.pth'))
     
     def train_iteration(self, num_steps, iter_num=0, print_logs=False):

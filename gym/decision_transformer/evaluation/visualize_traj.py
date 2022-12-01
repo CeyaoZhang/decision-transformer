@@ -18,7 +18,7 @@ class VisualizeTraj():
         self.device = device
         self.model = model.to(device)
 
-    def get_task_embedding(self, data):
+    def get_task_embedding(self, data, pooling):
         features, task_idxs = data
 
         (states, actions, rewards, dones, \
@@ -31,17 +31,18 @@ class VisualizeTraj():
         timesteps = timesteps.to(dtype=torch.int32, device=self.device)
         attention_masks = attention_masks.to(dtype=torch.float32, device=self.device)
         
-        _, cls_output = self.model(states, actions, rewards,
-             rtgs, timesteps, attention_masks, output_cls=True)
+        _, (outputs, cls_output) = self.model(states, actions, rewards,
+             rtgs, timesteps, attention_masks, return_outputs=True)
+        traj_embed = self.model.get_traj_embedding(outputs, cls_output, pooling)
 
-        return cls_output.detach().cpu().numpy(), task_idxs.detach().cpu().numpy()
+        return traj_embed.detach().cpu().numpy(), task_idxs.detach().cpu().numpy()
 
     @torch.no_grad()
-    def visualize(self):
+    def visualize(self, pooling='cls'):
         
         Xs, ys = [], []
         for _, data in enumerate(tqdm(self.dataloader)):
-            X, y = self.get_task_embedding(data)
+            X, y = self.get_task_embedding(data, pooling)
             Xs.append(X)
             ys.append(y)
         

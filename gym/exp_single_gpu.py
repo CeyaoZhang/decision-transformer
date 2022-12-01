@@ -85,6 +85,7 @@ def experiment(
         # wandb.watch(model)  # wandb has some bug
         ckpt_path = wandb.run.dir.split('/files')[0]
         print(f'\n{ckpt_path}\n')
+    
     else:
         ckpt_path = None
     
@@ -247,7 +248,7 @@ def experiment(
     normalize=variant['normalize']
     training_data = CustomDataset(dataset_name, env_name, env_level, 
                 trajs=trajectories, max_len=K, eval_traj=eval_traj, normalize=normalize)
-    
+       
     train_dataloader = DataLoader(training_data, batch_size=batch_size, 
                 shuffle=True, num_workers=4, drop_last=True, pin_memory=True,)
 
@@ -294,9 +295,20 @@ def experiment(
     else:
         raise NotImplementedError
 
-    
+    if log_to_wandb:
+        save_path = os.path.join(wandb.run.dir, 'models')
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+        data_info_path = os.path.join(save_path, 'data_info.json')
+        data_info = training_data.data_info
+        data_info['task_embed_size'] = model.cls_token.shape[-1]
+        with open(data_info_path, 'w') as f:
+            json.dump(data_info, f, indent=4)
+
     train_type = variant['train_type']
     if train_type == 'pretrain':
+
+        
 
         model = model.to(device=device)
 
@@ -405,7 +417,8 @@ if __name__ == '__main__':
                                         tSNE type: use a trained BERT model to visualize the task embedding')
     
     parser.add_argument('--mode', type=str, default='normal')  # normal for standard setting, delayed for sparse
-    parser.add_argument('--model_type', type=str, default='dt')  # dt for decision transformer, bc for behavior cloning, be for decision bert
+    parser.add_argument('--model_type', type=str, default='dt',
+                            choices=['dt', 'bc', 'de'], )  # dt for decision transformer, bc for behavior cloning, be for decision bert
     parser.add_argument('--input_type', '-it', type=str, default='cat', 
                             choices=['seq', 'cat'], 
                             help='input tuples can be sequence type (s,a,r)+time  or concat type cat(s,a,r)') 
@@ -413,7 +426,7 @@ if __name__ == '__main__':
     parser.add_argument('--embed_dim', type=int, default=128)
     parser.add_argument('--n_layer', type=int, default=3)
     parser.add_argument('--n_head', type=int, default=1)
-    parser.add_argument('--activation_function', type=str, default='relu')
+    parser.add_argument('--activation_function', '-acf', type=str, default='relu')
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--learning_rate', '-lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
@@ -424,7 +437,7 @@ if __name__ == '__main__':
     # parser.add_argument('--num_steps_per_iter', '-ns', type=int, default=10000, help='how many batchs for training')
     parser.add_argument('--epoch', type=int, default=50)
     parser.add_argument('--batch_size', '-bs', type=int, default=64)
-    parser.add_argument('--K', type=int, default=20, help="max_traj_len")
+    parser.add_argument('--K', type=int, default=200, help="max_traj_len")
     parser.add_argument('--pct_traj', type=float, default=1.)
     parser.add_argument('--num_eval_episodes', type=int, default=100)
 
@@ -434,7 +447,7 @@ if __name__ == '__main__':
     parser.add_argument('--log_to_wandb', '-w', type=boolean_argument, default=False)
 
     parser.add_argument('--save_epoch', type=int, default=10)
-    parser.add_argument('--normalize', type=bool, default=True)
+    parser.add_argument('--normalize', type=boolean_argument, default=True)
 
     parser.add_argument('--path_to_weights', '-p2w', type=str, default=None, help='the path of pretrained model')
     parser.add_argument('--model_name', type=str, default='model.pth')

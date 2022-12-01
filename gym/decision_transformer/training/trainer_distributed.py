@@ -46,12 +46,13 @@ class Distributed_MaskTrainer:
         train_step = 0 
         self.model.train()
         
-        for epoch in tqdm(range(self.variant['epoch'])):
+        for epoch in range(self.variant['epoch']):
             self.train_dataloader.sampler.set_epoch(epoch)
             train_losses = [] ## the loss in one iteration
             train_start = time.time()
+
             if self.gpu_id == 0:
-                for i, data in enumerate(self.train_dataloader):
+                for i, data in tqdm(enumerate(self.train_dataloader)):
                     self.train_step(data) ## the loss in one step
                     train_losses.append(self.diagnostics['training/total_error'])
 
@@ -132,7 +133,7 @@ class Distributed_MaskTrainer:
         dones = dones.to(dtype=torch.int32, device=self.gpu_id)
         rtgs = rtgs.to(dtype=torch.float32, device=self.gpu_id)
         timesteps = timesteps.to(dtype=torch.int32, device=self.gpu_id)
-        attention_masks = attention_masks.to(dtype=torch.float32, device=self.gpu_id)
+        attention_masks = attention_masks.to(dtype=torch.int32, device=self.gpu_id)
         
         input_masks, pred_masks = self.mask_batch_fn.get_all_masks()
         
@@ -143,6 +144,7 @@ class Distributed_MaskTrainer:
         state_preds, action_preds, reward_preds = self.model(
             state_inputs, action_inputs, reward_inputs, rtgs, timesteps, attention_masks,
         )
+        # state_preds, action_preds, reward_preds = outputs['preds']
 
         state_preds_masks = pred_masks["*"]["state"].unsqueeze(2)
         state_preds = state_preds * state_preds_masks
