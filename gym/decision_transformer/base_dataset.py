@@ -111,7 +111,11 @@ def get_traj_from_dataset(dataset_name, env_name, env_level, model_type, root='.
         act_dim = 6
         env_targets = None
 
-        def get_traj_from_env_levl(env_name:str, env_name_path:str, env_level:str, trajectories:List[Dict[str, np.array]]):
+        def get_traj_from_env_levl(
+                env_name:str, env_name_path:str, env_level:str, 
+                trajectories:List[Dict[str, np.array]]
+                ):
+                
             level_path = osp.join(env_name_path, env_level)
             assert osp.exists(level_path), f'The {level_path} is not exist!!!'
 

@@ -2,6 +2,9 @@ import torch
 import numpy as np
 import pylab as plt
 
+import os
+from time import time
+
 from tqdm import tqdm
 
 from tsnecuda import TSNE as fTSNE
@@ -13,12 +16,13 @@ from fast_tsne import fast_tsne
 
 class VisualizeTraj():
 
-    def __init__(self, dataloader, model, device) -> None:
+    def __init__(self, dataloader, model, device, variant:str):
         self.dataloader = dataloader
         self.device = device
         self.model = model.to(device)
+        self.variant = variant
 
-    def get_task_embedding(self, data, pooling):
+    def get_task_embedding(self, data):
         features, task_idxs = data
 
         (states, actions, rewards, dones, \
@@ -33,43 +37,74 @@ class VisualizeTraj():
         
         _, (outputs, cls_output) = self.model(states, actions, rewards,
              rtgs, timesteps, attention_masks, return_outputs=True)
-        traj_embed = self.model.get_traj_embedding(outputs, cls_output, pooling)
+        traj_embed_dict = self.model.get_traj_embedding(outputs, cls_output, to_npy=True)
 
-        return traj_embed.detach().cpu().numpy(), task_idxs.detach().cpu().numpy()
+        return traj_embed_dict, task_idxs.detach().cpu().numpy()
 
     @torch.no_grad()
-    def visualize(self, pooling='cls'):
+    def visualize(self, save_path):
         
-        Xs, ys = [], []
+        # if save_path == None:
+        #     save_path = self.variant['path_to_weights']
+        # assert save_path != None, "a save path must be given!"
+
+        tsne_path = os.path.join(save_path, 'tsne')
+        if not os.path.exists(tsne_path):
+            os.makedirs(tsne_path)
+        dataset_name = self.variant['dataset']
+        env_name, env_level = self.variant['env_name'], self.variant['env_level']
+        
+
+
+        Xs_cls, Xs_mean, Xs_max, ys = [], [], [], []
+        ## Due to device resource limitations, use batch to load all data 
         for _, data in enumerate(tqdm(self.dataloader)):
-            X, y = self.get_task_embedding(data, pooling)
-            Xs.append(X)
+            feat, y = self.get_task_embedding(data)
+            Xs_cls.append(feat['cls'])
+            Xs_mean.append(feat['mean'])
+            Xs_max.append(feat['max'])
             ys.append(y)
-        
-        Xs = np.concatenate(Xs, axis=0)
+        Xs_cls = np.concatenate(Xs_cls, axis=0)
+        Xs_mean = np.concatenate(Xs_mean, axis=0)
+        Xs_max = np.concatenate(Xs_max, axis=0)
         ys = np.concatenate(ys, axis=0)
 
-        print(Xs.shape)
-        # tsne = fTSNE(n_iter=5000, verbose=1, perplexity=10000, num_neighbors=500)
-        # tsne = fTSNE(n_components=2, perplexity=15, learning_rate=10)
-        tsne = TSNE(n_components=2, learning_rate='auto', init='random', perplexity=3)
+        print(Xs_cls.shape, Xs_mean.shape, Xs_max.shape, ys.shape)
+        idx = np.arange(ys.shape[0])
+        np.random.shuffle(idx)
         
-        # Zs = tsne.fit_transform(Xs)
-        Zs = fast_tsne(Xs)
+        
+        poolings = ['cls', 'mean', 'max']
+        inputs = [Xs_cls, Xs_mean, Xs_max]
+        outputs = []
+        for (pooling, input) in zip(poolings, inputs):
+            pic_name = f'{env_name}_{env_level}_{pooling}'
+            pic_path = os.path.join(tsne_path, pic_name)
+            
+            # tsne = fTSNE(n_iter=5000, verbose=1, perplexity=10000, num_neighbors=500)
+            tsne = fTSNE(n_components=2, perplexity=15, learning_rate=10)
+            # tsne = TSNE(n_components=2, learning_rate='auto', init='random', perplexity=3)
+            
+            start_time = time()
+            Z = tsne.fit_transform(input[idx[:50000]])
+            outputs.append(Z)
+            # Zs = fast_tsne(Xs)
+            end_time = time()
+            print(f'tsne result {Z.shape} and cost {end_time-start_time:.2}s')
 
-        print(Zs.shape)
+            fig = plt.figure( figsize=(8,8) )
+            ax = fig.add_subplot(1, 1, 1, title=pic_name)
 
-        fig = plt.figure( figsize=(8,8) )
-        ax = fig.add_subplot(1, 1, 1, title='TSNE' )
+            # Create the scatter
+            ax.scatter(x=Z[:,0], y=Z[:,1], s=2.0, c=ys[idx[:50000]], alpha=0.5,# label=y,
+                cmap=plt.cm.get_cmap('Paired'))
+            # ax.legend(loc='upper center', shadow=True)
+            
+            plt.savefig(pic_path+f'_{int(end_time)}.png')
+            plt.show()
 
-        # Create the scatter
-        ax.scatter(x=Zs[:,0], y=Zs[:,1], c=ys, # label=y,
-            cmap=plt.cm.get_cmap('Paired'), alpha=0.3, s=5.0)
-        # ax.legend(loc='upper center', shadow=True)
-        plt.savefig('temp.png')
+        print(f'\n{env_name} | { env_level} Done!')
 
-        plt.show()
-
-        return Zs
+        return outputs
 
     

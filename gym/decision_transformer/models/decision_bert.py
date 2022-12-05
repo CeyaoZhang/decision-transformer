@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from typing import Union, Dict
+
 import transformers
 from transformers import BertModel, BertForMaskedLM
 
@@ -96,16 +98,12 @@ class DecisionBERT(TrajectoryModel):
             self.embed_timestep = nn.Embedding(max_ep_len, 3*hidden_size) ## got it
             self.embed_ln = nn.LayerNorm(3*hidden_size)
             # self.predict_state = nn.Linear(3*hidden_size, self.state_dim)
-            self.predict_state = nn.Sequential(
-                *([nn.Linear(3*hidden_size, self.state_dim)] + ([nn.Tanh()] if action_tanh else []))
-            )
+            self.predict_state = nn.Linear(3*hidden_size, self.state_dim)
             self.predict_action = nn.Sequential(
                 *([nn.Linear(3*hidden_size, self.act_dim)] + ([nn.Tanh()] if action_tanh else []))
             )
             #self.predict_return = nn.Linear(3*hidden_size, 1)
-            self.predict_reward = nn.Sequential(
-                *([nn.Linear(3*hidden_size, 1)] + ([nn.Tanh()] if action_tanh else []))
-            )
+            self.predict_reward = nn.Linear(3*hidden_size, 1)
             
             self.cls_token = nn.Parameter(torch.zeros(1, 1, 3*hidden_size).to(self.device))
 
@@ -213,16 +211,30 @@ class DecisionBERT(TrajectoryModel):
     def get_traj_embedding(self, 
             outputs:torch.tensor, 
             cls_output:torch.tensor, 
-            pooling='cls')->torch.tensor:
+            to_npy:bool=False)->Dict[str, Union[torch.tensor, np.array]]:
 
-        if pooling == 'cls':
-            traj_embed = cls_output
-        elif pooling == 'mean':
-            traj_embed = torch.mean(outputs, dim=1)
-        elif pooling == 'max':
-            traj_embed = torch.max(outputs, dim=1)[0]
+        # if pooling == 'cls':
+        #     traj_embed = cls_output
+        # elif pooling == 'mean':
+        #     traj_embed = torch.mean(outputs, dim=1)
+        # elif pooling == 'max':
+        #     traj_embed = torch.max(outputs, dim=1)[0]
+        traj_embed_cls = cls_output
+        traj_embed_mean = torch.mean(outputs, dim=1)
+        traj_embed_max = torch.max(outputs, dim=1)[0]
 
-        return traj_embed
+        if to_npy:
+            return dict(
+                    cls=traj_embed_cls.detach().cpu().numpy(), 
+                    mean=traj_embed_mean.detach().cpu().numpy(), 
+                    max=traj_embed_max.detach().cpu().numpy()
+                    )
+        else:
+            return dict(
+                    cls=traj_embed_cls, 
+                    mean=traj_embed_mean, 
+                    max=traj_embed_max
+                    )
         
 
 

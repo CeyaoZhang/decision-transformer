@@ -58,6 +58,7 @@ def experiment(
         exp_prefix,
         variant,
 ):  
+    print('=' * 50)
     for (key, value) in variant.items():
         print(f"{key}: {value}")
     
@@ -83,11 +84,11 @@ def experiment(
             entity="porl" ## your wandb group name
         )
         # wandb.watch(model)  # wandb has some bug
-        ckpt_path = wandb.run.dir.split('/files')[0]
-        print(f'\n{ckpt_path}\n')
+    #     ckpt_path = wandb.run.dir.split('/files')[0]
+    #     print(f'\n{ckpt_path}\n')
     
-    else:
-        ckpt_path = None
+    # else:
+    #     ckpt_path = None
     
 
     # save all path information into separate lists
@@ -245,13 +246,6 @@ def experiment(
     trajectories, (state_dim, act_dim, max_ep_len, env_targets) \
         = get_traj_from_dataset(dataset_name, env_name, env_level, model_type)
     
-    normalize=variant['normalize']
-    training_data = CustomDataset(dataset_name, env_name, env_level, 
-                trajs=trajectories, max_len=K, eval_traj=eval_traj, normalize=normalize)
-       
-    train_dataloader = DataLoader(training_data, batch_size=batch_size, 
-                shuffle=True, num_workers=4, drop_last=True, pin_memory=True,)
-
     if model_type == 'dt':
         model = DecisionTransformer(
             state_dim=state_dim,
@@ -295,24 +289,31 @@ def experiment(
     else:
         raise NotImplementedError
 
-    if log_to_wandb:
-        save_path = os.path.join(wandb.run.dir, 'models')
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
-        data_info_path = os.path.join(save_path, 'data_info.json')
-        data_info = training_data.data_info
-        data_info['task_embed_size'] = model.cls_token.shape[-1]
-        with open(data_info_path, 'w') as f:
-            json.dump(data_info, f, indent=4)
+    model = model.to(device=device)
 
     train_type = variant['train_type']
     if train_type == 'pretrain':
 
-        
 
-        model = model.to(device=device)
+        normalize=variant['normalize']
+        training_data = CustomDataset(dataset_name, env_name, env_level, 
+                trajs=trajectories, max_len=K, eval_traj=eval_traj, normalize=normalize)
+       
+        train_dataloader = DataLoader(training_data, batch_size=batch_size, 
+                shuffle=True, num_workers=4, drop_last=True, pin_memory=True,) 
 
-        warmup_steps = variant['warmup_steps']
+        if log_to_wandb:
+            save_path = os.path.join(wandb.run.dir, 'models')
+            if not os.path.exists(save_path):
+                os.makedirs(save_path)
+            data_info_path = os.path.join(save_path, f'data_info_{env_name}_{env_level}.json')
+            data_info = training_data.data_info
+            data_info['task_embed_size'] = model.cls_token.shape[-1]
+            data_info['variant'] = variant
+            with open(data_info_path, 'w') as f:
+                json.dump(data_info, f, indent=4)  
+
+        warmup_steps = variant['warmup_epochs']
         optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=variant['learning_rate'],
@@ -360,7 +361,7 @@ def experiment(
                 get_batch=get_batch,
                 scheduler=scheduler,
                 eval_fns=eval_fns,
-                ckpt_path=ckpt_path,
+                ckpt_path=save_path,
                 mask_batch_fn=mask_batch_fn,
                 train_dataloader=train_dataloader,
                 device=device
@@ -372,21 +373,29 @@ def experiment(
     elif train_type == 'tSNE':
 
         # optionally load pre-trained weights
-        if variant['path_to_weights'] is not None:
-            _path = variant['path_to_weights']
+        if variant['path_to_weights'] != 'None':
+            save_path = variant['path_to_weights']
             model_name = variant['model_name']
-            model_path = osp.join(_path, model_name)
+            model_path = osp.join(save_path, model_name)
             assert osp.exists(model_path), 'the model is not exists'
             model.load_state_dict(torch.load(model_path))
+        else:
+            save_path = './wandb/RandomBERT'
         
         training_data = CustomDataset(dataset_name, env_name, env_level, 
                 trajs=trajectories, max_len=K, eval_traj=eval_traj)
-        train_dataloader = DataLoader(training_data, batch_size=4096, shuffle=True, num_workers=4)
+        train_dataloader = DataLoader(
+                training_data, 
+                batch_size=400, 
+                drop_last=True,
+                shuffle=True, 
+                num_workers=4
+                )
 
 
-        vistraj = VisualizeTraj(train_dataloader, model, device)
+        vis_traj = VisualizeTraj(train_dataloader, model, device, variant)
         # BERT_task_embedding = vistraj.get_task_embedding()
-        tSNE_task_embedding = vistraj.visualize()
+        tSNE_task_embedding = vis_traj.visualize(save_path)
 
         
 
@@ -430,7 +439,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--learning_rate', '-lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
-    parser.add_argument('--warmup_steps', type=int, default=10000)
+    parser.add_argument('--warmup_epochs', type=int, default=5)
 
     
     # parser.add_argument('--max_iters', type=int, default=10)
@@ -451,6 +460,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--path_to_weights', '-p2w', type=str, default=None, help='the path of pretrained model')
     parser.add_argument('--model_name', type=str, default='model.pth')
+    # parser.add_argument('--pooling', type=str, default='cls', choices=['cls', 'mean', 'max'])
 
     args = parser.parse_args()
 
