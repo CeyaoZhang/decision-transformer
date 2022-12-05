@@ -242,9 +242,4 @@ if __name__ == '__main__':
     for (key, value) in variant.items():
         print(f"{key}: {value}")
     
-    trajectories, _ = get_traj_from_dataset(variant['dataset'], variant['env_name'], variant['env_level'], variant['model_type'], variant['root'])
-    
-    training_data = CustomDataset(variant['dataset'], variant['env_name'], variant['env_level'], 
-        trajs=trajectories, max_len=variant['K'], eval_traj=eval_traj, normalize=variant['normalize'])
-    
-    mp.spawn(experiment, args=(world_size, training_data, 'gym', variant), nprocs=world_size)
+    mp.spawn(experiment, args=(world_size, 'gym', variant), nprocs=world_size)
