@@ -56,26 +56,28 @@ class VisualizeTraj():
         
 
 
-        Xs_cls, Xs_mean, Xs_max, ys = [], [], [], []
+        Xs_cls, Xs_mean, Xs_max, Xs_mix, ys = [], [], [], [], []
         ## Due to device resource limitations, use batch to load all data 
         for _, data in enumerate(tqdm(self.dataloader)):
             feat, y = self.get_task_embedding(data)
             Xs_cls.append(feat['cls'])
             Xs_mean.append(feat['mean'])
             Xs_max.append(feat['max'])
+            Xs_mix.append(feat['mix'])
             ys.append(y)
         Xs_cls = np.concatenate(Xs_cls, axis=0)
         Xs_mean = np.concatenate(Xs_mean, axis=0)
         Xs_max = np.concatenate(Xs_max, axis=0)
+        Xs_mix = np.concatenate(Xs_mix, axis=0)
         ys = np.concatenate(ys, axis=0)
 
-        print(Xs_cls.shape, Xs_mean.shape, Xs_max.shape, ys.shape)
+        print(Xs_cls.shape, ys.shape)
         idx = np.arange(ys.shape[0])
         np.random.shuffle(idx)
         
         
-        poolings = ['cls', 'mean', 'max']
-        inputs = [Xs_cls, Xs_mean, Xs_max]
+        poolings = ['cls', 'mean', 'max', 'mix']
+        inputs = [Xs_cls, Xs_mean, Xs_max, Xs_mix]
         outputs = []
         for (pooling, input) in zip(poolings, inputs):
             pic_name = f'{env_name}_{env_level}_{pooling}'

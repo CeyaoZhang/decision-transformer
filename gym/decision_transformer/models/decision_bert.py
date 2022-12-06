@@ -222,19 +222,25 @@ class DecisionBERT(TrajectoryModel):
         traj_embed_cls = cls_output
         traj_embed_mean = torch.mean(outputs, dim=1)
         traj_embed_max = torch.max(outputs, dim=1)[0]
+        traj_embed_mix = (traj_embed_cls+traj_embed_mean+traj_embed_max)/3
 
         if to_npy:
             return dict(
                     cls=traj_embed_cls.detach().cpu().numpy(), 
                     mean=traj_embed_mean.detach().cpu().numpy(), 
-                    max=traj_embed_max.detach().cpu().numpy()
+                    max=traj_embed_max.detach().cpu().numpy(),
+                    mix=traj_embed_mix.detach().cpu().numpy()
                     )
         else:
             return dict(
                     cls=traj_embed_cls, 
                     mean=traj_embed_mean, 
-                    max=traj_embed_max
+                    max=traj_embed_max,
+                    mix=traj_embed_mix
                     )
+
+    
+
         
 
 

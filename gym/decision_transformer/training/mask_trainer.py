@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from torch import linalg as LA
 
 from tqdm import tqdm
 import wandb
@@ -25,6 +26,8 @@ class MaskTrainer(Trainer):
         # self.eval_fns = [] if eval_fns is None else eval_fns
         self.variant = variant
         self.log_to_wandb = variant['log_to_wandb']
+        self.b = variant['b'] ## the hyper balance two loss
+        self.pooling = variant['pooling']
 
 
         self.mask_batch_fn = mask_batch_fn
@@ -106,7 +109,7 @@ class MaskTrainer(Trainer):
         ## those masked place (0 in input_masks) are where we need to pred (1 in pred_masks)
         # input_masks, pred_masks = self.mask_batch_fn.input_masks, self.mask_batch_fn.prediction_masks
         # input_masks, pred_masks = self.mask_batch_fn.get_input_masks(), self.mask_batch_fn.get_prediction_masks()
-        pred_masks, input_masks = self.mask_batch_fn.get_prediction_masks(), self.mask_batch_fn.input_masks
+        input_masks = self.mask_batch_fn.input_masks
 
         state_inputs = states * input_masks["*"]["state"].unsqueeze(2) ## make input_masks from (B,L) to (B, L, 1) and will broadcast to states
         action_inputs = actions * input_masks["*"]["action"].unsqueeze(2)
@@ -118,10 +121,33 @@ class MaskTrainer(Trainer):
         #     state_inputs, action_inputs, reward_inputs, rtg[:,:-1], timesteps, attention_mask=attention_mask,
         # )
         assert state_inputs.shape[0] == rtgs.shape[0], 'please use the same length'
-        state_preds, action_preds, reward_preds = self.model(
+        (state_preds, action_preds, reward_preds), (outputs, cls_output) = self.model(
             state_inputs, action_inputs, reward_inputs, rtgs, timesteps, attention_masks,
+            return_outputs=True
         )
         # state_preds, action_preds, reward_preds = outputs['preds']
+
+        
+        masked_sar_loss = self.masked_sar_pred(states, actions, rewards, attention_masks, state_preds, action_preds, reward_preds)
+        same_task_loss = self.same_task_pred(outputs, cls_output, task_idxs, pooling=self.pooling)
+
+        total_loss = (1.0-self.b) * masked_sar_loss + self.b * same_task_loss
+
+        self.optimizer.zero_grad()
+        total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), .25)
+        self.optimizer.step()
+
+        with torch.no_grad():
+            self.diagnostics['training/masked_sar_error'] = masked_sar_loss.detach().cpu().item()
+            self.diagnostics['training/same_task_error'] = same_task_loss.detach().cpu().item()
+            self.diagnostics['training/total_error'] = total_loss.detach().cpu().item()
+        
+        return total_loss.detach().cpu().item()
+
+
+    def masked_sar_pred(self, states, actions, rewards, attention_masks, state_preds, action_preds, reward_preds):
+        pred_masks = self.mask_batch_fn.get_prediction_masks()
 
         ## 
         state_preds_masks = pred_masks["*"]["state"].unsqueeze(2)
@@ -165,22 +191,36 @@ class MaskTrainer(Trainer):
         
         reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(torch.abs(reward_preds) > 0)
 
-        ##
-        # total_loss = state_loss + action_loss + rtg_loss
-        total_loss = state_loss + action_loss + reward_loss
-
-        self.optimizer.zero_grad()
-        total_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), .25)
-        self.optimizer.step()
+        ##ss
+        masked_sar_loss = state_loss + action_loss + reward_loss
 
         with torch.no_grad():
             self.diagnostics['training/state_error'] = state_loss.detach().cpu().item()
             self.diagnostics['training/action_error'] = action_loss.detach().cpu().item()
             # self.diagnostics['training/rtg_error'] = rtg_loss.detach().cpu().item()
             self.diagnostics['training/reward_error'] = reward_loss.detach().cpu().item()
-            self.diagnostics['training/total_error'] = total_loss.detach().cpu().item()
-            
-        return total_loss.detach().cpu().item()
+        
+        return masked_sar_loss
+
+    
+    def same_task_pred(self, outputs, cls_output, task_idxs, pooling:str='cls')->torch.tensor:
+
+        ## task_embed [B, D]
+        task_embed = self.model.get_traj_embedding(outputs, cls_output)['cls']
+
+        ## task_embed_norm [B, 1]
+        task_embed_norm = LA.vector_norm(task_embed, dim=1, keepdim=True) 
+
+        task_embed_pair_norm = task_embed_norm + task_embed_norm.T - 2*task_embed_norm.mm(task_embed_norm.T)
+        task_id_pair = task_idxs.reshape(1, -1) == task_idxs.reshape(-1, 1)
+        task_id_weight = task_id_pair*2 - 1.
+        task_id_weight = task_id_weight.to(dtype=torch.float32, device=self.device)
+
+        same_task_loss = task_embed_pair_norm.mul(task_id_weight).sum()
+
+        return same_task_loss
+
+        
+
 
 

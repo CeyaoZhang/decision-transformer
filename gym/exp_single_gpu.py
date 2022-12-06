@@ -312,6 +312,8 @@ def experiment(
             data_info['variant'] = variant
             with open(data_info_path, 'w') as f:
                 json.dump(data_info, f, indent=4)  
+        else:
+            save_path = None
 
         warmup_steps = variant['warmup_epochs']
         optimizer = torch.optim.AdamW(
@@ -364,7 +366,7 @@ def experiment(
                 ckpt_path=save_path,
                 mask_batch_fn=mask_batch_fn,
                 train_dataloader=train_dataloader,
-                device=device
+                device=device,
             )
 
         trainer.train_iteration()
@@ -440,6 +442,7 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', '-lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
     parser.add_argument('--warmup_epochs', type=int, default=5)
+    parser.add_argument('--b', type=float, default=0.5, help='a hyperparameter balance two losses')
 
     
     # parser.add_argument('--max_iters', type=int, default=10)
@@ -460,7 +463,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--path_to_weights', '-p2w', type=str, default=None, help='the path of pretrained model')
     parser.add_argument('--model_name', type=str, default='model.pth')
-    # parser.add_argument('--pooling', type=str, default='cls', choices=['cls', 'mean', 'max'])
+    parser.add_argument('--pooling', type=str, default='cls', choices=['cls', 'mean', 'max', 'mix'])
 
     args = parser.parse_args()
 
