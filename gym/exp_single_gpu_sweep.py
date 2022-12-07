@@ -2,13 +2,12 @@ import gym
 import numpy as np
 import torch
 
-
-
 import wandb
 
 import argparse
 import pickle
 import json
+import yaml
 import random
 import sys
 import datetime
@@ -51,38 +50,19 @@ def get_mean_std(x:List[np.array]) -> np.array:
     x_mean, x_std = np.mean(x, axis=0), np.std(x, axis=0) + 1e-6
     return x_mean, x_std
 
-def deep_update_dict(fr, to):
-    ''' update dict of dicts with new values '''
-    # assume dicts have same keys
-    ## if you add new keys in the json file, please add the same keys in the default.py
-    for k, v in fr.items():
-        if type(v) is dict:
-            deep_update_dict(v, to[k])
-        else:
-            to[k] = v
-    return to
 
 
 def experiment(
         exp_prefix,
         variant,
 ):  
-
-    # if variant['train_type'] == 'tSNE' and variant['path_to_weights'] != 'None':
-    #     save_path = variant['path_to_weights']
-    #     for _path in os.listdir(save_path):
-    #         if _path.endswith('.json'):
-    #             data_info_path = os.path.join(save_path, _path)
-    #     with open(data_info_path) as f:
-    #             exp_params = json.load(f)
-    #     variant = deep_update_dict(exp_params['variant'], variant)
-    #     variant['train_type'] = 'tSNE'
-    #     variant['path_to_weights'] = save_path
-
-
     print('=' * 50)
     for (key, value) in variant.items():
         print(f"{key}: {value}")
+
+    # Set up your default hyperparameters
+    with open('./config.yaml') as file:
+        config = yaml.load(file, Loader=yaml.FullLoader)
     
 
     dataset_name = variant['dataset']
@@ -306,8 +286,7 @@ def experiment(
             hidden_dropout_prob=variant['dropout'],
             attention_probs_dropout_prob=variant['dropout'],
             input_type=variant['input_type'],
-            device=device,
-            num_task=60,
+            device=device
         )
     else:
         raise NotImplementedError
@@ -429,6 +408,26 @@ def experiment(
     print("\n---------------------Finish!!!----------------------------")
 
 
+# # Step 2: Define sweep config
+# sweep_configuration = {
+#     'method': 'random',
+#     'name': 'sweep',
+#     'parameters': 
+#     {
+#         # 'batch_size': {'values': [16, 32, 64]},
+#         # 'epochs': {'values': [5, 10, 15]},
+#         'lr': {'max': 0.1, 'min': 0.0001},
+#         'activation_function': {'values': ['relu', 'gelu']},
+#         'b': {'values': [0.1, 0.3, 0.5, 0.7, 0.9]},
+#         'pooling': {'values': ['cls', 'mean', 'max', 'mix']},
+#      }
+# }
+
+# sweep_id = wandb.sweep(sweep_configuration)
+
+# # run the sweep
+# wandb.agent(sweep_id, function=my_train_func)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='D4RL', 
@@ -450,12 +449,12 @@ if __name__ == '__main__':
     parser.add_argument('--embed_dim', type=int, default=128)
     parser.add_argument('--n_layer', type=int, default=3)
     parser.add_argument('--n_head', type=int, default=1)
-    parser.add_argument('--activation_function', '-acf', type=str, default='relu')
+    # parser.add_argument('--activation_function', '-acf', type=str, default='relu')
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--learning_rate', '-lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
     parser.add_argument('--warmup_epochs', type=int, default=5)
-    parser.add_argument('--b', type=float, default=0.5, help='a hyperparameter balance two losses')
+    # parser.add_argument('--b', type=float, default=0.5, help='a hyperparameter balance two losses')
 
     
     # parser.add_argument('--max_iters', type=int, default=10)
@@ -472,11 +471,11 @@ if __name__ == '__main__':
     parser.add_argument('--log_to_wandb', '-w', type=boolean_argument, default=False)
 
     parser.add_argument('--save_epoch', type=int, default=10)
-    parser.add_argument('--normalize', type=boolean_argument, default=True)
+    # parser.add_argument('--normalize', type=boolean_argument, default=True)
 
     parser.add_argument('--path_to_weights', '-p2w', type=str, default=None, help='the path of pretrained model')
     parser.add_argument('--model_name', type=str, default='model.pth')
-    parser.add_argument('--pooling', type=str, default='cls', choices=['cls', 'mean', 'max', 'mix'])
+    # parser.add_argument('--pooling', type=str, default='cls', choices=['cls', 'mean', 'max', 'mix'])
 
     args = parser.parse_args()
 

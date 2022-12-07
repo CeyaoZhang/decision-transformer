@@ -4,6 +4,8 @@ import pylab as plt
 
 import os
 from time import time
+import datetime
+import dateutil.tz
 
 from tqdm import tqdm
 
@@ -79,9 +81,14 @@ class VisualizeTraj():
         poolings = ['cls', 'mean', 'max', 'mix']
         inputs = [Xs_cls, Xs_mean, Xs_max, Xs_mix]
         outputs = []
-        for (pooling, input) in zip(poolings, inputs):
-            pic_name = f'{env_name}_{env_level}_{pooling}'
-            pic_path = os.path.join(tsne_path, pic_name)
+        
+        fig, axs = plt.subplots(2, 2, figsize=(10,10)) #(ax1, ax2), 
+        pic_name = f'{env_name}_{env_level}'
+        # pic_name = f'{env_name}_{env_level}_{pooling}'
+        fig.suptitle(pic_name)
+
+        for _, (pooling, input) in enumerate(zip(poolings, inputs)):
+            
             
             # tsne = fTSNE(n_iter=5000, verbose=1, perplexity=10000, num_neighbors=500)
             tsne = fTSNE(n_components=2, perplexity=15, learning_rate=10)
@@ -92,20 +99,26 @@ class VisualizeTraj():
             outputs.append(Z)
             # Zs = fast_tsne(Xs)
             end_time = time()
-            print(f'tsne result {Z.shape} and cost {end_time-start_time:.2}s')
+            print(f'tsne {pooling} result {Z.shape} and cost {end_time-start_time:.2}s')
 
-            fig = plt.figure( figsize=(8,8) )
-            ax = fig.add_subplot(1, 1, 1, title=pic_name)
+            # fig = plt.figure( figsize=(8,8) )
+            # ax = fig.add_subplot(1, 1, 1, title=pic_name)
+            
 
             # Create the scatter
-            ax.scatter(x=Z[:,0], y=Z[:,1], s=2.0, c=ys[idx[:50000]], alpha=0.5,# label=y,
+            axs[_//2, _%2].scatter(x=Z[:,0], y=Z[:,1], s=2.0, c=ys[idx[:50000]], alpha=0.5,# label=y,
                 cmap=plt.cm.get_cmap('Paired'))
+            axs[_//2, _%2].set_title(pooling)
             # ax.legend(loc='upper center', shadow=True)
-            
-            plt.savefig(pic_path+f'_{int(end_time)}.png')
-            plt.show()
 
-        print(f'\n{env_name} | { env_level} Done!')
+        now = datetime.datetime.now(dateutil.tz.tzlocal())
+        timestamp = now.strftime('%y%m%d_%H%M%S')
+        pic_path = os.path.join(tsne_path, f'{timestamp}-{pic_name}.png') 
+
+        fig.savefig(pic_path)
+        # plt.show()
+
+        print(f'\n{env_name} | { env_level} Done! Save in {pic_path}')
 
         return outputs
 

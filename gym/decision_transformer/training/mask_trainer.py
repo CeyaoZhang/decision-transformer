@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from torch import linalg as LA
+from torch.nn import CrossEntropyLoss, BCEWithLogitsLoss, MSELoss
 
 from tqdm import tqdm
 import wandb
@@ -90,10 +91,15 @@ class MaskTrainer(Trainer):
         #     rtg, timesteps, attention_mask = self.get_batch(self.batch_size)
         # (states, actions, rewards, dones, \
         #     rtgs, timesteps, attention_masks), _ = next(iter(self.train_dataloader))
+        
+        ## features []
+        ## task_idxs torch.tensor [B]
         features, task_idxs = data
 
         (states, actions, rewards, dones, \
             rtgs, timesteps, attention_masks) = features
+
+        task_idxs = task_idxs.to(dtype=torch.int64, device=self.device)
 
         states = states.to(dtype=torch.float32, device=self.device)
         actions= actions.to(dtype=torch.float32, device=self.device)
@@ -126,21 +132,25 @@ class MaskTrainer(Trainer):
             return_outputs=True
         )
         # state_preds, action_preds, reward_preds = outputs['preds']
-
         
+        ## task_embed [B, D]
+        task_embed = self.model.get_traj_embedding(outputs, cls_output)[self.pooling]
+        
+        cls_task_loss = self.cls_task_pred(task_embed, task_idxs)
         masked_sar_loss = self.masked_sar_pred(states, actions, rewards, attention_masks, state_preds, action_preds, reward_preds)
-        same_task_loss = self.same_task_pred(outputs, cls_output, task_idxs, pooling=self.pooling)
-
-        total_loss = (1.0-self.b) * masked_sar_loss + self.b * same_task_loss
+        # same_task_loss = self.same_task_pred(task_embed, task_idxs)
+        # total_loss = (1.0-self.b) * masked_sar_loss + self.b * same_task_loss
+        total_loss = (1.0-self.b) * masked_sar_loss + self.b * cls_task_loss
 
         self.optimizer.zero_grad()
         total_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), .25)
+        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), .25)
         self.optimizer.step()
 
         with torch.no_grad():
             self.diagnostics['training/masked_sar_error'] = masked_sar_loss.detach().cpu().item()
-            self.diagnostics['training/same_task_error'] = same_task_loss.detach().cpu().item()
+            # self.diagnostics['training/same_task_error'] = same_task_loss.detach().cpu().item()
+            self.diagnostics['training/cls_task_error'] = cls_task_loss.detach().cpu().item()
             self.diagnostics['training/total_error'] = total_loss.detach().cpu().item()
         
         return total_loss.detach().cpu().item()
@@ -203,11 +213,9 @@ class MaskTrainer(Trainer):
         return masked_sar_loss
 
     
-    def same_task_pred(self, outputs, cls_output, task_idxs, pooling:str='cls')->torch.tensor:
+    def same_task_pred(self, task_embed, task_idxs)->torch.tensor:
 
-        ## task_embed [B, D]
-        task_embed = self.model.get_traj_embedding(outputs, cls_output)['cls']
-
+        
         ## task_embed_norm [B, 1]
         task_embed_norm = LA.vector_norm(task_embed, dim=1, keepdim=True) 
 
@@ -219,6 +227,13 @@ class MaskTrainer(Trainer):
         same_task_loss = task_embed_pair_norm.mul(task_id_weight).sum()
 
         return same_task_loss
+
+    def cls_task_pred(self, task_embed:torch.tensor, task_idxs:torch.tensor)->torch.tensor:
+        loss_fct = CrossEntropyLoss()
+        task_score = self.model.cls(task_embed)
+        cls_task_loss = loss_fct(task_score, task_idxs)
+
+        return cls_task_loss
 
         
 

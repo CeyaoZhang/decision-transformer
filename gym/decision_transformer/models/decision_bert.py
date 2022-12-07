@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+
 from typing import Union, Dict
 
 import transformers
@@ -46,6 +47,7 @@ class DecisionBERT(TrajectoryModel):
             action_tanh=True,
             input_type='cat',
             device='cuda',
+            num_task=60,
             time_embed=False,
             **kwargs
     ):
@@ -54,6 +56,7 @@ class DecisionBERT(TrajectoryModel):
         self.hidden_size = hidden_size
         self.input_type = input_type
         self.device=device
+        self.num_task = num_task
         self.time_embed = time_embed
 
         
@@ -82,30 +85,19 @@ class DecisionBERT(TrajectoryModel):
         self.embed_state = nn.Linear(self.state_dim, hidden_size) 
         self.embed_action = nn.Linear(self.act_dim, hidden_size)
         
-        if self.input_type == 'seq':
-            self.embed_timestep = nn.Embedding(max_ep_len, hidden_size) ## got it
-            self.embed_ln = nn.LayerNorm(hidden_size)
-            self.predict_state = nn.Linear(hidden_size, self.state_dim)
-            self.predict_action = nn.Sequential(
-                *([nn.Linear(hidden_size, self.act_dim)] + ([nn.Tanh()] if action_tanh else []))
-            )
-            #self.predict_return = nn.Linear(hidden_size, 1)
-            self.predict_reward = nn.Linear(hidden_size, 1)
-            
-            self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden_size).to(self.device))
 
-        elif self.input_type == 'cat':
-            self.embed_timestep = nn.Embedding(max_ep_len, 3*hidden_size) ## got it
-            self.embed_ln = nn.LayerNorm(3*hidden_size)
-            # self.predict_state = nn.Linear(3*hidden_size, self.state_dim)
-            self.predict_state = nn.Linear(3*hidden_size, self.state_dim)
-            self.predict_action = nn.Sequential(
-                *([nn.Linear(3*hidden_size, self.act_dim)] + ([nn.Tanh()] if action_tanh else []))
-            )
-            #self.predict_return = nn.Linear(3*hidden_size, 1)
-            self.predict_reward = nn.Linear(3*hidden_size, 1)
-            
-            self.cls_token = nn.Parameter(torch.zeros(1, 1, 3*hidden_size).to(self.device))
+        self.embed_timestep = nn.Embedding(max_ep_len, config.hidden_size) ## got it
+        self.embed_ln = nn.LayerNorm(config.hidden_size)
+        self.predict_state = nn.Linear(config.hidden_size, self.state_dim)
+        self.predict_action = nn.Sequential(
+            *([nn.Linear(config.hidden_size, self.act_dim)] + ([nn.Tanh()] if action_tanh else []))
+        )
+        #self.predict_return = nn.Linear(hidden_size, 1)
+        self.predict_reward = nn.Linear(config.hidden_size, 1)
+        
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, config.hidden_size).to(self.device))
+
+        self.cls = nn.Linear(config.hidden_size, num_task)
 
 
     def forward(self, states, actions, rewards, 

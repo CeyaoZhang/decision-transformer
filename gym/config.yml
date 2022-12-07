@@ -1,0 +1,20 @@
+program: train.py
+method: random
+parameters:
+  input_type:
+    values: ['seq', 'cat']
+  lr:
+    min: 0.0001
+    max: 0.1
+  activation_function:
+    values: ['relu', 'gelu']
+  pooling:
+    values: ['cls', 'mean', 'max', 'mix']
+  b:
+    values: [0.1, 0.3, 0.5, 0.7, 0.9]
+program: exp_single_gpu_sweep.py
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - ${args}
