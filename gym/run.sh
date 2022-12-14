@@ -34,14 +34,14 @@
 # p2w=wandb/run-20221206_124707-38urkoo4/files/models
 
 
-# nohup python -u exp_single_gpu.py --b 0.5 --gpu_id 0 -it cat --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 256 --K 200 -acf gelu -w True > ./wandb/de_all_all_single0_cat_160h6layer4head_0-5b256bs_gelu_w.log 2>&1 &  
+nohup python -u exp_single_gpu.py --b 0.5 --gpu_id 0 -it cat --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 256 --K 200 -acf gelu -w True > ./wandb/de_all_all_single0_cat_160h6layer4head_0-5b256bs_gelu_w.log 2>&1 &  
 # p2w=wandb/run-20221207_071950-280ynkj9/files/models
 # gpuid=0
 
-# nohup python -u exp_single_gpu.py --b 1.0 --gpu_id 1 --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de -it cat --embed_dim 160 --n_layer 6 --n_head 4 -bs 256 --K 200 -acf gelu -w True > ./wandb/de_all_all_single1_cat_160h6layer4head_1-0b256bs_gelu_w.log 2>&1 &  
-# p2w=wandb/run-20221207_071950-m6sd5t9s/files/models
-p2w=None
-gpuid=1
+nohup python -u exp_single_gpu.py --b 1.0 --gpu_id 1 -it cat --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 256 --K 200 -acf gelu -w True > ./wandb/de_all_all_single1_cat_160h6layer4head_1-0b256bs_gelu_w.log 2>&1 &  
+# # p2w=wandb/run-20221207_071950-m6sd5t9s/files/models
+# p2w=None
+# gpuid=1
 
 ## run the exp_multi_gpu.py
 # nohup python -u exp_multi_gpu.py --world_size 2 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 512 --K 200 -w True  > ./wandb/de_all_all_2ws_160h6layer4head_512bs_cat_w.log 2>&1 & 
@@ -57,7 +57,7 @@ gpuid=1
 
 # python exp_single_gpu.py --train_type tSNE --model_type de -it cat --embed_dim 160 --n_layer 9 --n_head 8 -bs 256 --K 200 -acf gelu --path_to_weights ${p2w} --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal
 
-python exp_single_gpu.py --train_type tSNE --path_to_weights ${p2w} --gpu_id ${gpuid} --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de -it cat --embed_dim 160 --n_layer 6 --n_head 4 -bs 256 --K 200 -acf gelu 
+# python exp_single_gpu.py --train_type tSNE --path_to_weights ${p2w} --gpu_id ${gpuid} --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de -it cat --embed_dim 160 --n_layer 6 --n_head 4 -bs 256 --K 200 -acf gelu 
 # for env_level in normal relabel rnd cic icmapt; do 
 # python exp_single_gpu.py --train_type tSNE --path_to_weights ${p2w} --gpu_id ${gpuid} --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level ${env_level} --model_type de -it cat --embed_dim 160 --n_layer 6 --n_head 4 -bs 256 --K 200 -acf gelu 
 # done

@@ -99,7 +99,6 @@ class DecisionBERT(TrajectoryModel):
 
         self.cls = nn.Linear(config.hidden_size, num_task)
 
-
     def forward(self, states, actions, rewards, 
                 returns_to_go=None, timesteps=None, attention_mask=None, 
                 return_outputs=False):

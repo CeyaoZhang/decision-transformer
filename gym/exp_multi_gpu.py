@@ -226,7 +226,7 @@ if __name__ == '__main__':
                             help='input tuples can be sequence type (s,a,r)+time  or concat type cat(s,a,r)') 
     
     parser.add_argument('--world_size', '-ws', type=int, default=8) # use how many gpus to distribute
-    parser.add_argument('--root', type=str, default='./data', help='dataset path')
+    parser.add_argument('--root', type=str, default='/data/px/ceyaozhang/MyCodes/data', help='dataset path')
     
     args = parser.parse_args()
     

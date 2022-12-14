@@ -23,7 +23,7 @@ class MaskTrainer(Trainer):
         # self.optimizer = optimizer
         # self.batch_size = batch_size
         # self.get_batch = get_batch
-        # self.scheduler = scheduler
+        self.scheduler = scheduler
         # self.eval_fns = [] if eval_fns is None else eval_fns
         self.variant = variant
         self.log_to_wandb = variant['log_to_wandb']
@@ -35,6 +35,9 @@ class MaskTrainer(Trainer):
         self.train_dataloader = train_dataloader
         self.device = device
 
+        self.size = len(train_dataloader.dataset)
+        self.num_batch = len(train_dataloader)
+
         self.diagnostics = dict()
         self.start_time = time.time()
     
@@ -43,20 +46,23 @@ class MaskTrainer(Trainer):
         for epoch in tqdm(range(self.variant['epoch'])):
             
             train_losses = [] ## the loss in one iteration
+            train_corrects = []
             epoch_logs = dict()
 
             train_start = time.time()
             self.model.train()
             for i, data in enumerate(self.train_dataloader):
 
-                train_loss = self.train_step(data) ## the loss in train one batch
+                train_loss, correct  = self.train_step(data) ## the loss in train one batch
                 train_losses.append(train_loss)
+                train_corrects.append(correct)
             
             if self.scheduler is not None:
                 self.scheduler.step()
                 
             # get epoch logs
-            epoch_logs['time/training'] = time.time() - train_start
+            epoch_time = time.time() - train_start
+            epoch_logs['time/training'] = epoch_time
 
             eval_start = time.time()
 
@@ -71,6 +77,10 @@ class MaskTrainer(Trainer):
             epoch_logs['time/evaluation'] = time.time() - eval_start
             epoch_logs['training/train_loss_mean'] = np.mean(train_losses) ## the mean in each iter
             epoch_logs['training/train_loss_std'] = np.std(train_losses)
+            acc = np.sum(train_corrects)/self.size 
+            epoch_logs['training/train_acc'] = acc
+
+            print(f'{epoch}: cost {epoch_time}s and acc {acc}')
 
             for k in self.diagnostics:
                 epoch_logs[k] = self.diagnostics[k]
@@ -136,7 +146,7 @@ class MaskTrainer(Trainer):
         ## task_embed [B, D]
         task_embed = self.model.get_traj_embedding(outputs, cls_output)[self.pooling]
         
-        cls_task_loss = self.cls_task_pred(task_embed, task_idxs)
+        cls_task_loss, num_right_pred = self.cls_task_pred(task_embed, task_idxs)
         masked_sar_loss = self.masked_sar_pred(states, actions, rewards, attention_masks, state_preds, action_preds, reward_preds)
         # same_task_loss = self.same_task_pred(task_embed, task_idxs)
         # total_loss = (1.0-self.b) * masked_sar_loss + self.b * same_task_loss
@@ -153,7 +163,7 @@ class MaskTrainer(Trainer):
             self.diagnostics['training/cls_task_error'] = cls_task_loss.detach().cpu().item()
             self.diagnostics['training/total_error'] = total_loss.detach().cpu().item()
         
-        return total_loss.detach().cpu().item()
+        return total_loss.detach().cpu().item(), num_right_pred
 
 
     def masked_sar_pred(self, states, actions, rewards, attention_masks, state_preds, action_preds, reward_preds):
@@ -229,11 +239,16 @@ class MaskTrainer(Trainer):
         return same_task_loss
 
     def cls_task_pred(self, task_embed:torch.tensor, task_idxs:torch.tensor)->torch.tensor:
+
+        ## task_embed [B, D]
+        ## task_score [B, #tasks]
+        ## task_idxs [B]
         loss_fct = CrossEntropyLoss()
         task_score = self.model.cls(task_embed)
         cls_task_loss = loss_fct(task_score, task_idxs)
+        correct  = (task_score.argmax(1) == task_idxs).type(torch.float).sum().item()
 
-        return cls_task_loss
+        return cls_task_loss, correct 
 
         
 

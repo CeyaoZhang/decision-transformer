@@ -84,7 +84,7 @@ def experiment(
     for (key, value) in variant.items():
         print(f"{key}: {value}")
     
-
+    root = variant['root']
     dataset_name = variant['dataset']
     env_name, env_level = variant['env_name'], variant['env_level']
     model_type = variant['model_type']
@@ -152,121 +152,8 @@ def experiment(
     gpu_id = variant['gpu_id']
     os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
 
-    def get_batch(batch_size=256, max_len=K):
-        batch_inds = np.random.choice(
-            np.arange(num_trajectories),
-            size=batch_size,
-            replace=True,
-            p=p_sample,  # reweights so we sample according to timesteps
-        )
-
-        s, a, r, d, rtg, timesteps, mask = [], [], [], [], [], [], []
-        for i in range(batch_size):
-            ## all the data from here !! but why we need sorted_inds??
-            traj = trajectories[int(sorted_inds[batch_inds[i]])] 
-
-            if dataset_name == 'D4RL':
-                si = random.randint(0, traj['rewards'].shape[0] - 1)
-                # get sequences from dataset
-                ## from (max_len, d) to (1, max_len, d) for s, a, r
-                ## from (max_len, ) to (1, max_len) for terminals, timesteps
-                s.append(traj['observations'][si:si + max_len].reshape(1, -1, state_dim)) 
-                a.append(traj['actions'][si:si + max_len].reshape(1, -1, act_dim))
-                r.append(traj['rewards'][si:si + max_len].reshape(1, -1, 1))
-                if 'terminals' in traj:
-                    d.append(traj['terminals'][si:si + max_len].reshape(1, -1))
-                elif 'dones' in traj:
-                    d.append(traj['dones'][si:si + max_len].reshape(1, -1))
-                ## why not se si+max_len, because si + max_len may > len(traj)
-                timesteps.append(np.arange(si, si + s[-1].shape[1]).reshape(1, -1)) 
-                timesteps[-1][timesteps[-1] >= max_ep_len] = max_ep_len-1  # padding cutoff
-                ## len(rtg[0]) = len(r[0]) + 1, but I don't know the usage
-                rtg.append(discount_cumsum(traj['rewards'][si:], gamma=1.)[:s[-1].shape[1] + 1].reshape(1, -1, 1))
-                if rtg[-1].shape[1] <= s[-1].shape[1]:
-                    rtg[-1] = np.concatenate([rtg[-1], np.zeros((1, 1, 1))], axis=1)
-
-            elif dataset_name == 'CheetahWorld-v2':
-                s.append(traj['observations'].reshape(1, -1, state_dim)) 
-                a.append(traj['actions'].reshape(1, -1, act_dim))
-                r.append(traj['rewards'].reshape(1, -1, 1))
-                d.append(np.zeros(s[-1].shape[1]).reshape(1, -1)) 
-                timesteps.append(np.arange(s[-1].shape[1]).reshape(1, -1)) 
-                rtg.append(discount_cumsum(traj['rewards'], gamma=1.)[:s[-1].shape[1] + 1].reshape(1, -1, 1))
-                if rtg[-1].shape[1] <= s[-1].shape[1]:
-                    rtg[-1] = np.concatenate([rtg[-1], np.zeros((1, 1, 1))], axis=1)
-
-            # padding, state + reward normalization
-            ## at first glance, this is strange for padding from the left,
-            ## but then I realized, that it doesn't matter from the left or the right,
-            ## the key point is to be consistence with mask
-            tlen = s[-1].shape[1] ## the len of each traj
-            s[-1] = np.concatenate([np.zeros((1, max_len - tlen, state_dim)), s[-1]], axis=1) ## make s[-1] = (1, max_len, Ds)
-            s[-1] = (s[-1] - state_mean) / state_std
-            ## why use np.ones for action??
-            a[-1] = np.concatenate([np.ones((1, max_len - tlen, act_dim)) * -10., a[-1]], axis=1) 
-            a[-1] = (a[-1] - action_mean) / action_std 
-            r[-1] = np.concatenate([np.zeros((1, max_len - tlen, 1)), r[-1]], axis=1)
-            r[-1] = (r[-1] - reward_mean) / reward_std 
-            d[-1] = np.concatenate([np.ones((1, max_len - tlen)) * 2, d[-1]], axis=1)
-            rtg[-1] = np.concatenate([np.zeros((1, max_len - tlen, 1)), rtg[-1]], axis=1) / scale
-            timesteps[-1] = np.concatenate([np.zeros((1, max_len - tlen)), timesteps[-1]], axis=1)
-            mask.append(np.concatenate([np.zeros((1, max_len - tlen)), np.ones((1, tlen))], axis=1)) 
-
-        s = torch.from_numpy(np.concatenate(s, axis=0)).to(dtype=torch.float32, device=device)
-        a = torch.from_numpy(np.concatenate(a, axis=0)).to(dtype=torch.float32, device=device)
-        r = torch.from_numpy(np.concatenate(r, axis=0)).to(dtype=torch.float32, device=device)
-        d = torch.from_numpy(np.concatenate(d, axis=0)).to(dtype=torch.int, device=device) ## default version is torch.long
-        rtg = torch.from_numpy(np.concatenate(rtg, axis=0)).to(dtype=torch.float32, device=device)
-        timesteps = torch.from_numpy(np.concatenate(timesteps, axis=0)).to(dtype=torch.int, device=device) ## default version is torch.long
-        mask = torch.from_numpy(np.concatenate(mask, axis=0)).to(dtype=torch.float32, device=device) ## default version without torch.float32
-
-        ## s,a,r,rtg are (B, L, D), d and mask are (B,L)
-        return s, a, r, d, rtg, timesteps, mask
-
-    def eval_episodes(target_rew):
-        def fn(model):
-            returns, lengths = [], []
-            for _ in range(num_eval_episodes):
-                with torch.no_grad():
-                    if model_type == 'dt':
-                        ret, length = evaluate_episode_rtg(
-                            env,
-                            state_dim,
-                            act_dim,
-                            model,
-                            max_ep_len=max_ep_len,
-                            scale=scale,
-                            target_return=target_rew/scale,
-                            mode=mode,
-                            state_mean=state_mean,
-                            state_std=state_std,
-                            device=device,
-                        )
-                    elif model_type == 'bc':
-                        ret, length = evaluate_episode(
-                            env,
-                            state_dim,
-                            act_dim,
-                            model,
-                            max_ep_len=max_ep_len,
-                            target_return=target_rew/scale,
-                            mode=mode,
-                            state_mean=state_mean,
-                            state_std=state_std,
-                            device=device,
-                        )
-                returns.append(ret)
-                lengths.append(length)
-            return {
-                f'target_{target_rew}_return_mean': np.mean(returns),
-                f'target_{target_rew}_return_std': np.std(returns),
-                f'target_{target_rew}_length_mean': np.mean(lengths),
-                f'target_{target_rew}_length_std': np.std(lengths),
-            }
-        return fn
-
     trajectories, (state_dim, act_dim, max_ep_len, env_targets) \
-        = get_traj_from_dataset(dataset_name, env_name, env_level, model_type)
+        = get_traj_from_dataset(dataset_name, env_name, env_level, model_type, root)
     
     if model_type == 'dt':
         model = DecisionTransformer(
@@ -353,6 +240,7 @@ def experiment(
             eval_fns = [eval_episodes(tar) for tar in env_targets]
         elif dataset_name == 'CheetahWorld-v2':
             eval_fns = None
+            get_batch = None
 
         if model_type == 'dt':
             trainer = SequenceTrainer(
@@ -377,7 +265,6 @@ def experiment(
         elif model_type == 'de':
 
             mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
-
             trainer = MaskTrainer(
                 variant=variant,
                 model=model,
@@ -477,6 +364,8 @@ if __name__ == '__main__':
     parser.add_argument('--path_to_weights', '-p2w', type=str, default=None, help='the path of pretrained model')
     parser.add_argument('--model_name', type=str, default='model.pth')
     parser.add_argument('--pooling', type=str, default='cls', choices=['cls', 'mean', 'max', 'mix'])
+
+    parser.add_argument('--root', type=str, default='/data/px/ceyaozhang/MyCodes/data', help='dataset path')
 
     args = parser.parse_args()
 

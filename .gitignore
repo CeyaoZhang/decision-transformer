@@ -1,4 +1,5 @@
 gym/data/CheetahWorld*
+gym/data/*.png
 *.pkl
 *.npy
 *.ipynb*
