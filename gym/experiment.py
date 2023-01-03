@@ -24,7 +24,7 @@ from decision_transformer.models.mlp_bc import MLPBCModel
 from decision_transformer.training.act_trainer import ActTrainer
 from decision_transformer.training.seq_trainer import SequenceTrainer
 from decision_transformer.training.mask_trainer import MaskTrainer ##
-from decision_transformer.training.mask_batches import RandomPred
+from decision_transformer.training.batches import RandomPred
 
 def discount_cumsum(x, gamma):
     discount_cumsum = np.zeros_like(x)

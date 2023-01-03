@@ -18,7 +18,7 @@ from decision_transformer.models.mlp_bc import MLPBCModel
 from decision_transformer.training.act_trainer import ActTrainer
 from decision_transformer.training.seq_trainer import SequenceTrainer
 from decision_transformer.training.trainer_distributed import Distributed_MaskTrainer ##
-from decision_transformer.training.mask_batches import RandomPred
+from decision_transformer.training.batches import RandomPred
 # from decision_transformer.dataset import eval_traj, get_trajectory_CheetahWorld, CustomDataset
 from decision_transformer.base_dataset import eval_traj, get_traj_from_dataset, CustomDataset
 

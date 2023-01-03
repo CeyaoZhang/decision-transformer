@@ -164,17 +164,19 @@ class Batch(ABC):
     #     inp, timestep_inp = self.input_data.model_input(self.input_masks)
     #     return inp, timestep_inp
 
-    # def empty_input_masks(self):
-    #     s_in_mask = torch.zeros((self.num_seqs, self.seq_len))
-    #     act_in_mask = torch.zeros((self.num_seqs, self.seq_len))
-    #     rtg_in_mask = torch.zeros((self.num_seqs, self.seq_len))
-    #     return act_in_mask, rtg_in_mask, s_in_mask
+    def empty_input_masks(self):
+        s_in_mask = torch.zeros((self.num_seqs, self.seq_len))
+        a_in_mask = torch.zeros((self.num_seqs, self.seq_len))
+        rtg_in_mask = torch.zeros((self.num_seqs, self.seq_len))
+        r_in_mask = torch.zeros((self.num_seqs, self.seq_len))
+        return s_in_mask, a_in_mask, rtg_in_mask, r_in_mask
 
-    # def empty_pred_masks(self):
-    #     s_mask = torch.zeros_like(self.input_masks["*"]["state"])
-    #     a_mask = torch.zeros_like(self.input_masks["*"]["action"])
-    #     r_mask = torch.zeros_like(self.input_masks["*"]["rtg"])
-    #     return a_mask, r_mask, s_mask
+    def empty_pred_masks(self):
+        s_mask = torch.zeros_like(self.input_masks["*"]["state"])
+        a_mask = torch.zeros_like(self.input_masks["*"]["action"])
+        rtg_mask = torch.zeros_like(self.input_masks["*"]["rtg"])
+        r_mask = torch.zeros_like(self.input_masks["*"]["reward"])
+        return s_mask, a_mask, rtg_mask, r_mask
 
     # ###############
     # # INPUT UTILS #
@@ -314,3 +316,183 @@ class RandomPred(Batch):
     def get_prediction_masks(self):
         """For item prediction, the prediction masks will be exactly the opposite relative to the input masks"""
         return super().get_prediction_masks()
+
+
+class SpanPred(Batch):
+    """
+    Mask which has 1..100..001..1 for actions
+    and            1..110..001..1 for states
+
+    where 1s are not masked out, and 0s are masked out. You can sample actions from the back _or_ from the front.
+
+    For span_limit (a,b), will mask out an additional action at the beginning to predict:
+        States [a, b) and actions [a-1, b) will be masked out (unless a=0 for first-timestep backwards
+        inference, actions [a, b)).
+
+    span_limits examples if seq_len is 10:
+    - span_limits=(10, 10) means that you're just training to predict the last action
+    - span_limits=(9, 10) means you're training to predict the last state and the last two actions
+    - span_limits=(1, 10) means you're training to predict the first action (and later things) given the first state
+
+    State spans can also be predicted in backwards inference by setting span_limits=(0, t_to_predict + 1).
+
+    NOTE: Check input and prediction mask attributes if usure what's going on
+    """
+
+    def __init__(self, span_limits=None, **kwargs):
+        super().__init__(**kwargs)
+
+        # Masked span to predict at inference time
+        # None if training (masks)
+        self.span_limits = span_limits
+        self.training_spans = self.get_training_spans(self.seq_len)
+        self.input_masks = self.get_input_masks()
+        self.prediction_masks = self.get_prediction_masks()
+
+        if self.span_limits is not None:
+            assert type(span_limits) in [tuple, list]
+            span_limits = tuple(span_limits)
+            assert self.seq_len >= span_limits[1] >= span_limits[0] >= 0, (
+                self.seq_len,
+                span_limits[1],
+                span_limits[0],
+            )
+            assert span_limits in self.training_spans, f"{span_limits}vs{self.training_spans}"
+
+    @staticmethod
+    def get_training_spans(seq_len):
+        possible_span_limits = []
+        for start in np.arange(seq_len + 1):
+            for end in np.arange(start, seq_len + 1):
+                possible_span_limits.append((start, end))
+        return possible_span_limits
+
+    @classmethod
+    def must_have_size_multiple_of(cls, seq_len):
+        """Batch should have a number of sequences multiple of the returned number"""
+        return len(cls.get_training_spans(seq_len))
+
+    def generate_training_span_limits(self):
+        """Tiles all possible training span combinations to get `self.num_seqs` training masks."""
+        num_per_type = self.num_maskings_per_type()
+        training_spans = self.get_training_spans(self.seq_len)
+        span_limits_n = np.concatenate([[span_limits] * num_per_type for span_limits in training_spans])
+        np.random.shuffle(span_limits_n)
+        return span_limits_n
+
+    def get_masks_for_span_limits(self, span_limits_n):
+        """
+        Masks state, ac, rtg tensors according to `span_limits`.
+        Each token sequence will be of shape [num_seqs, seq_len, factor_size_sum]
+        """
+        # We define all masks for the basic next prediction task as [num_seqs, seq_len] ones, and apply them across
+        # the entire factor_size_sum dimension.
+        s_in_mask = torch.ones((self.num_seqs, self.seq_len))
+        a_in_mask = torch.ones((self.num_seqs, self.seq_len))
+        rtg_in_mask = torch.ones((self.num_seqs, self.seq_len))
+        r_in_mask = torch.ones((self.num_seqs, self.seq_len))
+
+        for traj_idx, span_limits in enumerate(span_limits_n):
+            # Mask out the things we want to predict (i.e. zero out)
+            a, b = span_limits
+            s_in_mask[traj_idx, a:b] = 0
+            rtg_in_mask[traj_idx, a:b] = 0
+            r_in_mask[traj_idx, a:b] = 0
+
+            # If the state input mask starts at 0, have the action mask also start from there.
+            # This will happen when doing backward prediction.
+            a_in_start_idx = max(a - 1, 0)
+            a_in_mask[traj_idx, a_in_start_idx:b] = 0
+
+        rtg_in_mask = self.postprocess_rtg_mask(rtg_in_mask, self.rtg_masking_type)
+    
+        return {"*": {"state": s_in_mask.to(self.device), 
+                        "action": a_in_mask.to(self.device), 
+                            "rtg": rtg_in_mask.to(self.device),
+                                "reward": r_in_mask.to(self.device)}}
+
+    def get_input_masks(self):
+        """Get masked s, a, rtg for training or inference."""
+        # Inference: predict with a particular span masked
+        if self.span_limits is not None:
+            span_limits_n = [self.span_limits] * self.num_seqs
+        # Training: generate training masks
+        else:
+            span_limits_n = self.generate_training_span_limits()
+
+        return self.get_masks_for_span_limits(span_limits_n)
+
+
+class FuturePred(SpanPred):
+    """
+    Mask which has 1..100..00 for actions
+    and            1..110..00 for states
+
+    Differs from SpanPred in that the later states/actions are all zeros always.
+    """
+
+    @staticmethod
+    def get_training_spans(seq_len):
+        possible_span_limits = []
+        for start in np.arange(1, seq_len + 1):
+            end = seq_len
+            possible_span_limits.append((start, end))
+        return possible_span_limits
+
+
+class PastPred(SpanPred):
+    """
+    Mask which has 00..001..1 for actions
+    and            00..001..1 for states
+
+    Differs from SpanPred in that the initial states/actions are all zeros always.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        assert self.rtg_masking_type == "BC"
+
+    @staticmethod
+    def get_training_spans(seq_len):
+        possible_span_limits = []
+        for end in np.arange(1, seq_len + 1):
+            start = 0
+            possible_span_limits.append((start, end))
+        return possible_span_limits
+
+
+class NextActionPred(FuturePred):
+    """
+    FuturePred, but only predict the next action (instead of all future states and actions).
+    Enables comparison to DT's autoregressive loss.
+
+    NOTE: when the rtg_masking_type is BC or Unchanged, this is equivalent to behavior cloning
+    NOTE: when the rtg_masking_type is RC_fixed, this is equivalent to reward-conditioned behavior cloning
+
+    If used with span_limits={}, it will take the validation dataset and randomly assign a different masking
+    to each sequence. (This is slightly different than what the original version of the code by Jessy did, which
+    generated _all_ possible maskings, while here they are randomly selected). To generate all possible maskings,
+    use n=seq_len batches, each of which has a different span_limits, and then average the losses.
+
+    Val loss will be average loss on p(a_t | s_1, a_1, ... s_{t-1}, a_{t-1}), *for all t*.
+    This can be useful for a apples-to-apples comparison with DT's autoregressive loss.
+    """
+
+    def get_prediction_masks(self):
+        s_mask, a_mask, rtg_mask, r_mask = self.empty_pred_masks()
+
+        # Only look at prediction loss for first missing action
+        # First missing action for each seq in the batch
+        first_missing_act_to_pred_t_n = self.input_masks["*"]["action"].sum(1).long()
+        for seq_idx, first_missing_t in enumerate(first_missing_act_to_pred_t_n):
+            a_mask[seq_idx, first_missing_t] = 1
+
+        return {"*": {"state": s_mask.to(self.device), "action": a_mask.to(self.device), 
+                        "rtg": rtg_mask.to(self.device), "reward": r_mask.to(self.device)}}
+
+
+class BehaviorCloning(NextActionPred):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        assert self.rtg_masking_type in ["BC", "Unchanged"] 
+        ## Batch default is "Unchanged"

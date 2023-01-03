@@ -11,9 +11,9 @@ from tqdm import tqdm
 
 from tsnecuda import TSNE as fTSNE
 from sklearn.manifold import TSNE
-import sys
-sys.path.append('/data/px/ceyaozhang/OfficialCodes/FIt-SNE/')
-from fast_tsne import fast_tsne
+# import sys
+# sys.path.append('/data/px/ceyaozhang/OfficialCodes/FIt-SNE/')
+# from fast_tsne import fast_tsne
 
 
 class VisualizeTraj():

@@ -27,7 +27,7 @@ from decision_transformer.models.mlp_bc import MLPBCModel
 from decision_transformer.training.act_trainer import ActTrainer
 from decision_transformer.training.seq_trainer import SequenceTrainer
 from decision_transformer.training.mask_trainer import MaskTrainer ##
-from decision_transformer.training.mask_batches import RandomPred
+from decision_transformer.training.batches import RandomPred, BehaviorCloning
 
 from decision_transformer.base_dataset import CustomDataset, get_traj_from_dataset, eval_traj 
 from torch.utils.data import DataLoader
@@ -67,17 +67,6 @@ def experiment(
         exp_prefix,
         variant,
 ):  
-
-    # if variant['train_type'] == 'tSNE' and variant['path_to_weights'] != 'None':
-    #     save_path = variant['path_to_weights']
-    #     for _path in os.listdir(save_path):
-    #         if _path.endswith('.json'):
-    #             data_info_path = os.path.join(save_path, _path)
-    #     with open(data_info_path) as f:
-    #             exp_params = json.load(f)
-    #     variant = deep_update_dict(exp_params['variant'], variant)
-    #     variant['train_type'] = 'tSNE'
-    #     variant['path_to_weights'] = save_path
 
 
     print('=' * 50)
@@ -131,22 +120,6 @@ def experiment(
     num_eval_episodes = variant['num_eval_episodes']
     pct_traj = variant.get('pct_traj', 1.)
 
-    ## this part works only pac_traj < 1.0, unless it's useless
-    # only train on top pct_traj trajectories (for %BC experiment)
-    # num_timesteps = max(int(pct_traj*num_timesteps), 1)
-    # sorted_inds = np.argsort(returns)  # lowest to highest, give the order of each return
-    # num_trajectories = 1
-    # timesteps = traj_lens[sorted_inds[-1]]
-    # ind = len(trajectories) - 2 ## 998
-    # while ind >= 0 and timesteps + traj_lens[sorted_inds[ind]] <= num_timesteps:
-    #     timesteps += traj_lens[sorted_inds[ind]]
-    #     num_trajectories += 1
-    #     ind -= 1
-    # ## when terminal timesteps = 1M, num_trajectories=1000, ind = -1
-    # sorted_inds = sorted_inds[-num_trajectories:]
-
-    # # used to reweight sampling so we sample according to timesteps instead of trajectories
-    # p_sample = traj_lens[sorted_inds] / sum(traj_lens[sorted_inds])
 
     device = variant.get('device', 'cuda')
     gpu_id = variant['gpu_id']
@@ -237,7 +210,8 @@ def experiment(
         )
 
         if dataset_name == 'D4RL':
-            eval_fns = [eval_episodes(tar) for tar in env_targets]
+            # eval_fns = [eval_episodes(tar) for tar in env_targets]
+            pass
         elif dataset_name == 'CheetahWorld-v2':
             eval_fns = None
             get_batch = None
@@ -264,7 +238,8 @@ def experiment(
             )
         elif model_type == 'de':
 
-            mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
+            # mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
+            mask_batch_fn = BehaviorCloning(num_seqs=batch_size, seq_len=K, device=device)
             trainer = MaskTrainer(
                 variant=variant,
                 model=model,

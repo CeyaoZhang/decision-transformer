@@ -27,7 +27,7 @@ class MaskTrainer(Trainer):
         # self.eval_fns = [] if eval_fns is None else eval_fns
         self.variant = variant
         self.log_to_wandb = variant['log_to_wandb']
-        self.b = variant['b'] ## the hyper balance two loss
+        self.b = variant['b'] ## the hyper balance two loss, default is 0.5
         self.pooling = variant['pooling']
 
 
@@ -80,7 +80,7 @@ class MaskTrainer(Trainer):
             acc = np.sum(train_corrects)/self.size 
             epoch_logs['training/train_acc'] = acc
 
-            print(f'{epoch}: cost {epoch_time}s and acc {acc}')
+            print(f'{epoch}: cost {epoch_time:.3f}s and acc {acc:.2f}')
 
             for k in self.diagnostics:
                 epoch_logs[k] = self.diagnostics[k]
