@@ -78,7 +78,8 @@ def experiment(
     env_name, env_level = variant['env_name'], variant['env_level']
     model_type = variant['model_type']
     input_type = variant['input_type']
-    group_name = f'{exp_prefix}_{dataset_name}_{env_name}_{env_level}_{model_type}_{input_type}'
+    task_type = variant['task_type']
+    group_name = f'{exp_prefix}_{dataset_name}_{env_name}_{env_level}_{model_type}_{input_type}_{task_type}'
     print(f'\ngroup_name: {group_name}\n')
     # exp_prefix = f'{group_name}-{random.randint(int(1e5), int(1e6) - 1)}'
     now = datetime.datetime.now(dateutil.tz.tzlocal())
@@ -237,9 +238,11 @@ def experiment(
                 eval_fns=eval_fns,
             )
         elif model_type == 'de':
-
-            # mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
-            mask_batch_fn = BehaviorCloning(num_seqs=batch_size, seq_len=K, device=device)
+            if task_type == 'Random':
+                mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
+            elif task_type == 'BC':
+                mask_batch_fn = BehaviorCloning(num_seqs=batch_size, seq_len=K, device=device)
+            
             trainer = MaskTrainer(
                 variant=variant,
                 model=model,
@@ -284,9 +287,6 @@ def experiment(
         # BERT_task_embedding = vistraj.get_task_embedding()
         tSNE_task_embedding = vis_traj.visualize(save_path)
 
-        
-
-            
     
     print("\n---------------------Finish!!!----------------------------")
 
@@ -301,14 +301,16 @@ if __name__ == '__main__':
     parser.add_argument('--train_type', type=str, default='pretrain', 
         choices=['pretrain', 'tSNE'], help='pretrain type: train a BERT model,\
                                         tSNE type: use a trained BERT model to visualize the task embedding')
-    
     parser.add_argument('--mode', type=str, default='normal')  # normal for standard setting, delayed for sparse
     parser.add_argument('--model_type', type=str, default='dt',
                             choices=['dt', 'bc', 'de'], )  # dt for decision transformer, bc for behavior cloning, be for decision bert
     parser.add_argument('--input_type', '-it', type=str, default='cat', 
                             choices=['seq', 'cat'], 
                             help='input tuples can be sequence type (s,a,r)+time  or concat type cat(s,a,r)') 
-    
+    parser.add_argument('--task_type', type=str, default='Random',
+                            choices=['Random', 'BC'], )  
+
+
     parser.add_argument('--embed_dim', type=int, default=128)
     parser.add_argument('--n_layer', type=int, default=3)
     parser.add_argument('--n_head', type=int, default=1)

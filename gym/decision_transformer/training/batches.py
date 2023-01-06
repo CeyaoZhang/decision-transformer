@@ -494,5 +494,5 @@ class NextActionPred(FuturePred):
 class BehaviorCloning(NextActionPred):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        assert self.rtg_masking_type in ["BC", "Unchanged"] 
-        ## Batch default is "Unchanged"
+        assert self.rtg_masking_type in ["BC", "Unchanged"]  ## Batch default is "Unchanged"
+       
