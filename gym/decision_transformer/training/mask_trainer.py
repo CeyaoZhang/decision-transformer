@@ -24,7 +24,7 @@ class MaskTrainer(Trainer):
         # self.batch_size = batch_size
         # self.get_batch = get_batch
         self.scheduler = scheduler
-        # self.eval_fns = [] if eval_fns is None else eval_fns
+        self.eval_fns = [] if eval_fns is None else eval_fns
         self.variant = variant
         self.log_to_wandb = variant['log_to_wandb']
         self.b = variant['b'] ## the hyper balance two loss, default is 0.5

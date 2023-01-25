@@ -45,6 +45,7 @@
 
 ## run the exp_multi_gpu.py
 # nohup python -u exp_multi_gpu.py --world_size 2 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 512 --K 200 -w True  > ./wandb/de_all_all_2ws_160h6layer4head_512bs_cat_w.log 2>&1 & 
+
 # nohup python -u exp_multi_gpu.py --world_size 1 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 512 --K 200 -w True  > ./wandb/de_all_all_1ws_160h6layer4head_512bs_cat_w.log 2>&1 &
 # nohup python -u exp_multi_gpu.py --world_size 2 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 9 --n_head 8 -bs 256 --K 200 -acf relu -w True > ./wandb/de_all_all_1ws_cat_160h9layer8head_256bs_relu_w.log 2>&1 &  
 # nohup python -u exp_multi_gpu.py --world_size 2 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 9 --n_head 8 -bs 256 --K 200 -acf gelu -w True > ./wandb/de_all_all_1ws_cat_160h9layer8head_256bs_gelu_w.log 2>&1 &  
@@ -52,10 +53,14 @@
 #-------------------------# task type: BC
 
 # nohup python -u exp_single_gpu.py --task_type BC --b 0.5 --gpu_id 0 -it cat --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 200 --K 200 -acf gelu -w True > ./wandb/BC_de_cheetah-vel_normal_single0_cat_160h6layer4head_0-5b200bs_gelu_w.log 2>&1 &  
+
 # nohup python -u exp_single_gpu.py --task_type BC --b 1.0 --gpu_id 1 -it cat --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 200 --K 200 -acf gelu -w True > ./wandb/BC_de_cheetah-vel_normal_single1_cat_160h6layer4head_1-0b200bs_gelu_w.log 2>&1 &  
 
-nohup python -u exp_single_gpu.py --task_type BC --b 0.5 --gpu_id 0 -it cat --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 200 --K 200 -acf gelu -w True > ./wandb/BC_de_cheetah-dir_normal_single0_cat_160h6layer4head_0-5b200bs_gelu_w.log 2>&1 &  
-nohup python -u exp_single_gpu.py --task_type BC --b 1.0 --gpu_id 1 -it cat --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 200 --K 200 -acf gelu -w True > ./wandb/BC_de_cheetah-dir_normal_single1_cat_160h6layer4head_1-0b200bs_gelu_w.log 2>&1 &  
+
+
+# nohup python -u exp_single_gpu.py --task_type BC --b 0.5 --gpu_id 0 -it cat --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 200 --K 200 -acf gelu -w True > ./wandb/BC_de_cheetah-dir_normal_single0_cat_160h6layer4head_0-5b200bs_gelu_w.log 2>&1 &  
+
+# nohup python -u exp_single_gpu.py --task_type BC --b 1.0 --gpu_id 1 -it cat --dataset CheetahWorld-v2 --env_name cheetah-dir --env_level normal --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 200 --K 200 -acf gelu -w True > ./wandb/BC_de_cheetah-dir_normal_single1_cat_160h6layer4head_1-0b200bs_gelu_w.log 2>&1 &  
 
 
 

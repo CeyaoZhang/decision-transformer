@@ -487,12 +487,99 @@ class NextActionPred(FuturePred):
         for seq_idx, first_missing_t in enumerate(first_missing_act_to_pred_t_n):
             a_mask[seq_idx, first_missing_t] = 1
 
-        return {"*": {"state": s_mask.to(self.device), "action": a_mask.to(self.device), 
-                        "rtg": rtg_mask.to(self.device), "reward": r_mask.to(self.device)}}
+        return {"*": {"state": s_mask.to(self.device), "action": a_mask.to(self.device), "rtg": rtg_mask.to(self.device), "reward": r_mask.to(self.device)}}
 
 
 class BehaviorCloning(NextActionPred):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         assert self.rtg_masking_type in ["BC", "Unchanged"]  ## Batch default is "Unchanged"
-       
+
+class GoalConditionedBC(BehaviorCloning):
+    @staticmethod
+    def get_training_spans(seq_len):
+        # Differs from the super() method in that the start index cannot be the last state
+        possible_span_limits = []
+        for start in np.arange(1, seq_len):
+            end = seq_len
+            possible_span_limits.append((start, end))
+        return possible_span_limits
+
+    def generate_training_span_limits(self):
+        # Differs from super in that that span limits is randomized rather than tessellated
+        training_spans = self.get_training_spans(self.seq_len)
+        span_indices = np.random.choice(len(training_spans), size=self.num_seqs)
+        span_limits_n = [training_spans[idx] for idx in span_indices]
+        return span_limits_n
+
+    def get_input_masks(self):
+        input_masks = super().get_input_masks()
+        # Add goal to seen
+        input_masks["*"]["state"][:, self.seq_len - 1] = 1
+        return input_masks
+    
+
+class DynamicsBatch(Batch, ABC):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        assert (
+            self.rtg_masking_type == "BC"
+        ), "RC has nothing to do with dynamics, should not include this info ever (batch will handle it)"
+        self.random_indices = self.get_random_indices()
+        self.input_masks = self.get_input_masks()
+        self.prediction_masks = self.get_prediction_masks()
+
+    def get_random_indices(self):
+        """
+        Get the index for which we will have the state, and for which we are either trying to infer
+        the next state or the previous one (depending on the task)
+        """
+        random_indices = np.random.choice(self.seq_len - 1, size=self.num_seqs)
+        return random_indices
+
+    @classmethod
+    def must_have_size_multiple_of(cls, seq_len):
+        """Batch should have a number of sequences multiple of the returned number"""
+        return seq_len - 1
+
+
+class ForwardDynamics(DynamicsBatch):
+    def get_input_masks(self):
+        s_in_mask, a_in_mask, rtg_in_mask, r_in_mask = self.empty_input_masks()
+        for traj_idx, rnd_idx in enumerate(self.random_indices):
+            # Give the network the state and action at this timestep
+            s_in_mask[traj_idx, rnd_idx] = 1
+            a_in_mask[traj_idx, rnd_idx] = 1
+        return {"*": {"state": s_in_mask, "action": a_in_mask, "rtg": rtg_in_mask, "reward": r_in_mask}}
+
+    def get_prediction_masks(self):
+        s_mask, a_mask, rtg_mask, r_mask = self.empty_pred_masks()
+        # Only predict the next state
+        for traj_idx, rnd_idx in enumerate(self.random_indices):
+            # Give the network the state and action at this timestep
+            s_mask[traj_idx, rnd_idx + 1] = 1
+        return {"*": {"state": s_mask.to(self.device), "action": a_mask.to(self.device), "rtg": rtg_mask.to(self.device), "reward": r_mask.to(self.device)}}
+
+
+class BackwardsDynamics(DynamicsBatch):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Shifting the random indices up by one so that we can't have any random indices = 0
+        # (which would not have a previous state to predict)
+        self.random_indices += 1
+
+    def get_input_masks(self):
+        s_in_mask, a_in_mask, rtg_in_mask, r_in_mask = self.empty_input_masks()
+        for traj_idx, rnd_idx in enumerate(self.random_indices):
+            # Give the network the state at this timestep and the previous action
+            s_in_mask[traj_idx, rnd_idx] = 1
+            a_in_mask[traj_idx, rnd_idx - 1] = 1
+        return {"*": {"state": s_in_mask, "action": a_in_mask, "rtg": rtg_in_mask, "reward": r_in_mask}}
+
+    def get_prediction_masks(self):
+        s_mask, a_mask, rtg_mask, r_mask = self.empty_pred_masks()
+        # Only predict the previous state
+        for traj_idx, rnd_idx in enumerate(self.random_indices):
+            # Give the network the state and action at this timestep
+            s_mask[traj_idx, rnd_idx - 1] = 1
+        return {"*": {"state": s_mask.to(self.device), "action": a_mask.to(self.device), "rtg": rtg_mask.to(self.device), "reward": r_mask.to(self.device)}}
