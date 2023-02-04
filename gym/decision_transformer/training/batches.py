@@ -550,7 +550,7 @@ class ForwardDynamics(DynamicsBatch):
             # Give the network the state and action at this timestep
             s_in_mask[traj_idx, rnd_idx] = 1
             a_in_mask[traj_idx, rnd_idx] = 1
-        return {"*": {"state": s_in_mask, "action": a_in_mask, "rtg": rtg_in_mask, "reward": r_in_mask}}
+        return {"*": {"state": s_in_mask.to(self.device), "action": a_in_mask.to(self.device), "rtg": rtg_in_mask.to(self.device), "reward": r_in_mask.to(self.device)}}
 
     def get_prediction_masks(self):
         s_mask, a_mask, rtg_mask, r_mask = self.empty_pred_masks()
@@ -574,7 +574,8 @@ class BackwardsDynamics(DynamicsBatch):
             # Give the network the state at this timestep and the previous action
             s_in_mask[traj_idx, rnd_idx] = 1
             a_in_mask[traj_idx, rnd_idx - 1] = 1
-        return {"*": {"state": s_in_mask, "action": a_in_mask, "rtg": rtg_in_mask, "reward": r_in_mask}}
+
+        return {"*": {"state": s_in_mask.to(self.device), "action": a_in_mask.to(self.device), "rtg": rtg_in_mask.to(self.device), "reward": r_in_mask.to(self.device)}}
 
     def get_prediction_masks(self):
         s_mask, a_mask, rtg_mask, r_mask = self.empty_pred_masks()

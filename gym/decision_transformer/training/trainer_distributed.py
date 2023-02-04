@@ -44,9 +44,9 @@ class Distributed_MaskTrainer:
         epoch_logs = dict()
         
         train_step = 0 
-        self.model.train()
         
         for epoch in range(self.variant['epoch']):
+            self.model.train()
             self.train_dataloader.sampler.set_epoch(epoch)
             train_losses = [] ## the loss in one iteration
             train_start = time.time()
@@ -63,6 +63,17 @@ class Distributed_MaskTrainer:
                         wandb.log(logs, step=train_step)
 
                     train_step += 1
+
+                eval_start = time.time()
+                # evaluate models
+                self.model.eval()
+                for eval_fn in self.eval_fns:
+                    outputs = eval_fn(self.model)
+                    for k, v in outputs.items():
+                        epoch_logs[f'evaluation/{k}'] = v
+                
+                epoch_logs['time/evaluation'] = time.time() - eval_start
+
             else:
                 for i, data in enumerate(self.train_dataloader):
                     self.train_step(data) ## the loss in one step
@@ -84,18 +95,7 @@ class Distributed_MaskTrainer:
         
             # get epoch logs
             epoch_logs['time/training'] = time.time() - train_start
-
-            eval_start = time.time()
-
-            # evaluate models
-            self.model.eval()
-            for eval_fn in self.eval_fns:
-                outputs = eval_fn(self.model)
-                for k, v in outputs.items():
-                    epoch_logs[f'evaluation/{k}'] = v
-
             epoch_logs['time/total'] = time.time() - self.start_time
-            epoch_logs['time/evaluation'] = time.time() - eval_start
             epoch_logs['training/train_loss_mean'] = np.mean(train_losses) ## the mean in each iter
             epoch_logs['training/train_loss_std'] = np.std(train_losses)
             

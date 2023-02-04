@@ -59,8 +59,7 @@ def eval_fn(
         eval_dataloader,
         batch_size,
         K,
-        device
-        
+        device    
 ):
     def fn(model):
     
@@ -69,9 +68,9 @@ def eval_fn(
         elif eval_task_type == 'BC':
             mask_batch_fn = BehaviorCloning(num_seqs=batch_size, seq_len=K, device=device)
         elif eval_task_type == 'FD':
-            mask_batch_fn = ForwardDynamics(num_seqs=batch_size, seq_len=K, device=device)
+            mask_batch_fn = ForwardDynamics(num_seqs=batch_size, seq_len=K, device=device, rtg_masking_type='BC')
         elif eval_task_type == 'BD':
-            mask_batch_fn = BackwardsDynamics(num_seqs=batch_size, seq_len=K, device=device)
+            mask_batch_fn = BackwardsDynamics(num_seqs=batch_size, seq_len=K, device=device, rtg_masking_type='BC')
         
         model.eval()
         eval_loss = 0
@@ -85,8 +84,8 @@ def eval_fn(
             task_idxs = task_idxs.to(dtype=torch.int64, device=device)
 
             states = states.to(dtype=torch.float32, device=device)
-            actions= actions.to(dtype=torch.float32, device=device)
-            rewards = rewards.to(dtype=torch.float32, devie=device)
+            actions = actions.to(dtype=torch.float32, device=device)
+            rewards = rewards.to(dtype=torch.float32, device=device)
             dones = dones.to(dtype=torch.int32, device=device)
             rtgs = rtgs.to(dtype=torch.float32, device=device)
             timesteps = timesteps.to(dtype=torch.int32, device=device)
@@ -187,7 +186,7 @@ def experiment(
 
     K = variant['K']
     batch_size = variant['batch_size']
-    num_eval_episodes = variant['num_eval_episodes']
+    # num_eval_episodes = variant['num_eval_episodes']
     
     # dataset
     #training_data = CustomDataset(dataset_name, env_name, env_level, 
@@ -273,7 +272,7 @@ def experiment(
     # get masked trainer
     mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=rank)
     eval_tasks = ['Random', 'BC', 'FD', 'BD']
-    eval_fns = [eval_fn(eval_task, eval_dataloader, batch_size,K, rank) for eval_task in eval_tasks]
+    eval_fns = [eval_fn(eval_task, eval_dataloader, batch_size, K, rank) for eval_task in eval_tasks]
 
 
     trainer = Distributed_MaskTrainer(
@@ -304,7 +303,7 @@ def experiment(
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
             data_info_path = os.path.join(save_path, 'data_info.json')
-            data_info = train_dataset.data_info
+            data_info = full_dataset.data_info
             data_info['task_embed_size'] = model.cls_token.shape[-1]
             with open(data_info_path, 'w') as f:
                 json.dump(data_info, f, indent=4)
