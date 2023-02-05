@@ -138,8 +138,10 @@ def eval_fn(
             reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(torch.abs(reward_preds) > 0)
 
             ##ss
+            if eval_task_type == 'BC':
+                print(f'step {i}: s {state_loss.detach().cpu().item()}, a {action_loss.detach().cpu().item()}, r {reward_loss.detach().cpu().item()}')
+            
             masked_sar_loss = state_loss + action_loss + reward_loss
-
             eval_loss += masked_sar_loss.detach().cpu().item()
         
         return {
@@ -271,7 +273,8 @@ def experiment(
     
     # get masked trainer
     mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=rank)
-    eval_tasks = ['Random', 'BC', 'FD', 'BD']
+    # eval_tasks = ['Random', 'BC', 'FD', 'BD']
+    eval_tasks = ['Random', 'BC']
     eval_fns = [eval_fn(eval_task, eval_dataloader, batch_size, K, rank) for eval_task in eval_tasks]
 
 
