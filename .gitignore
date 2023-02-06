@@ -1,9 +1,13 @@
+gym/wandb
 gym/data/CheetahWorld*
 gym/data/*.png
+
+data/CheetahWorld*
+data/*.png
+
 *.pkl
 *.npy
-*.ipynb*
-gym/wandb
+*.ipynb
 
 # Byte-compiled / optimized / DLL files
 **/__pycache__/

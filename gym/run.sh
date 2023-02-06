@@ -34,7 +34,7 @@
 # p2w=wandb/run-20221206_124707-38urkoo4/files/models
 
 
-# nohup python -u exp_single_gpu.py --b 0.5 --gpu_id 0 -it cat --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 256 --K 200 -acf gelu -w True > ./wandb/de_all_all_single0_cat_160h6layer4head_0-5b256bs_gelu_w.log 2>&1 &  
+nohup python -u exp_single_gpu.py --b 0.5 --gpu_id 1 -it cat --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 200 --K 200 -acf gelu -w True > de_vel_normal_single1_cat_160h6layer4head_0-5b200bs_gelu_w.log 2>&1 &  
 # p2w=wandb/run-20221207_071950-280ynkj9/files/models
 # gpuid=0
 
@@ -48,10 +48,17 @@
 
 # nohup python -u exp_multi_gpu.py --world_size 1 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 6 --n_head 4 -bs 512 --K 200 -w True  > ./wandb/de_all_all_1ws_160h6layer4head_512bs_cat_w.log 2>&1 &
 # nohup python -u exp_multi_gpu.py --world_size 2 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 9 --n_head 8 -bs 256 --K 200 -acf relu -w True > ./wandb/de_all_all_1ws_cat_160h9layer8head_256bs_relu_w.log 2>&1 &  
-# nohup python -u exp_multi_gpu.py --world_size 2 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 9 --n_head 8 -bs 256 --K 200 -acf gelu -w True > ./wandb/de_all_all_1ws_cat_160h9layer8head_256bs_gelu_w.log 2>&1 &  
+# nohup python -u exp_multi_gpu.py --world_size 2 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 9 --n_head 8 -bs 256 --K 200 -acf gelu -w True > ./wandb/de_all_all_1ws_cat_160h9layer8head_256bs_gelu_w.log 2>&1 & 
+
+# nohup python -u exp_multi_gpu.py --world_size 2 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 9 --n_head 8 -bs 200 --K 200 -acf gelu -w True > ./wandb/de_all_all_2ws_cat_160h9layer8head_200bs_gelu_w.log 2>&1 & 
+
+# nohup python -u exp_multi_gpu.py --world_size 4 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 9 --n_head 8 -bs 200 --K 200 -acf gelu -w True > de_all_all_4ws_cat_160h9layer8head_200bs_gelu_w.log 2>&1 &
+
+# nohup python -u exp_multi_gpu.py --world_size 2 -it cat --dataset CheetahWorld-v2 --env_name all --env_level all --model_type de --embed_dim 160 --n_layer 9 --n_head 8 -bs 200 --K 200 -acf gelu -w True > de_all_all_2ws_cat_160h9layer8head_200bs_gelu_w.log 2>&1 &
+
+# nohup python -u exp_multi_gpu.py --world_size 4 -it cat --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de --embed_dim 160 --n_layer 9 --n_head 8 -bs 200 --K 200 -acf gelu -w True > de_vel_normal_4ws_cat_160h9layer8head_200bs_gelu_w.log 2>&1 & 
 
 
-nohup python -u exp_multi_gpu.py --world_size 4 -it cat --dataset CheetahWorld-v2 --env_name cheetah-vel --env_level normal --model_type de --embed_dim 160 --n_layer 9 --n_head 8 -bs 200 --K 200 -acf gelu -w True > ./wandb/de_vel_normal_4ws_cat_160h9layer8head_200bs_gelu_w.log 2>&1 & 
 
 #-------------------------# task type: BC
 

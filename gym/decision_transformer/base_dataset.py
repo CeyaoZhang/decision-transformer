@@ -18,7 +18,7 @@ def discount_cumsum(x, gamma):
     return _discount_cumsum
 
 
-def eval_traj(env_name:str, env_level:str, trajs:List[Dict[str, np.array]], idx_name:str, mode:str='normal')->list:
+def eval_traj(env_name:str, env_level:str, trajs:List[Dict[str, np.array]], idx_name:str, mode:str='normal', pflag:bool=False)->list:
 
     task_idx = idx_name.split('id')[-1]
 
@@ -48,16 +48,17 @@ def eval_traj(env_name:str, env_level:str, trajs:List[Dict[str, np.array]], idx_
     traj_lens = np.array(traj_lens)
     num_timesteps = sum(traj_lens) ## 1M for D4RL dataset
 
-    print('=' * 50)
-    print(f'Starting new experiment: {env_name} | {env_level} | {idx_name}')
-    print(f'{len(traj_lens)} trajectories, {num_timesteps} timesteps found')
-    print('-' * 50)
-    print(f'Average reward: {np.mean(rewards):.2f}, std: {np.std(rewards):.2f}')
-    print(f'Max reward: {np.max(rewards):.2f}, min: {np.min(rewards):.2f}')
-    print('-' * 50)
-    print(f'Average return: {np.mean(returns):.2f}, std: {np.std(returns):.2f}')
-    print(f'Max return: {np.max(returns):.2f}, min: {np.min(returns):.2f}')
-    print('=' * 50)
+    if pflag:
+        print('=' * 50)
+        print(f'Starting experiment: {env_name} | {env_level} | {idx_name}')
+        print(f'{len(traj_lens)} trajectories, {num_timesteps} timesteps found')
+        print('-' * 50)
+        print(f'Average reward: {np.mean(rewards):.2f}, std: {np.std(rewards):.2f}')
+        print(f'Max reward: {np.max(rewards):.2f}, min: {np.min(rewards):.2f}')
+        print('-' * 50)
+        print(f'Average return: {np.mean(returns):.2f}, std: {np.std(returns):.2f}')
+        print(f'Max return: {np.max(returns):.2f}, min: {np.min(returns):.2f}')
+        print('=' * 50)
 
     return states, actions, rewards, returns, traj_lens, num_timesteps
 
@@ -141,7 +142,7 @@ def get_traj_from_dataset(dataset_name, env_name, env_level, model_type, root='.
                         ## trajectories is a list containing 1K path.
                         ## Each path is a dict containing (o,a,r,no,d) with 1K steps
                         _trajs = pickle.load(f)
-                        _ = eval_traj(env_name, env_level, _trajs, idx_name)
+                        # _ = eval_traj(env_name, env_level, _trajs, idx_name)
                     
                         trajectories.extend(_trajs) ## do not use list.append()
                         
@@ -201,7 +202,7 @@ class CustomDataset(Dataset):
         self.normalize = normalize
         
         if eval_traj is not None:
-            states, actions, rewards, returns, traj_lens, num_timesteps = eval_traj(env_name, env_level, trajs, idx_name='all', mode='normal')
+            states, actions, rewards, returns, traj_lens, num_timesteps = eval_traj(env_name, env_level, trajs, idx_name='all', mode='normal', pflag=True)
             
             # used for input normalization
             states = np.concatenate(states, axis=0) ## np.array (1M, ds)

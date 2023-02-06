@@ -78,9 +78,9 @@ def eval_fn(
         elif eval_task_type == 'BC':
             mask_batch_fn = BehaviorCloning(num_seqs=batch_size, seq_len=K, device=device)
         elif eval_task_type == 'FD':
-            mask_batch_fn = ForwardDynamics(num_seqs=batch_size, seq_len=K, device=device)
+            mask_batch_fn = ForwardDynamics(num_seqs=batch_size, seq_len=K, device=device, rtg_masking_type='BC')
         elif eval_task_type == 'BD':
-            mask_batch_fn = BackwardsDynamics(num_seqs=batch_size, seq_len=K, device=device)
+            mask_batch_fn = BackwardsDynamics(num_seqs=batch_size, seq_len=K, device=device, rtg_masking_type='BC')
         
         model.eval()
         eval_loss = 0
@@ -88,14 +88,13 @@ def eval_fn(
 
             features, task_idxs = data
 
-            (states, actions, rewards, dones, \
-                rtgs, timesteps, attention_masks) = features
+            (states, actions, rewards, dones, rtgs, timesteps, attention_masks) = features
             
             task_idxs = task_idxs.to(dtype=torch.int64, device=device)
 
             states = states.to(dtype=torch.float32, device=device)
             actions= actions.to(dtype=torch.float32, device=device)
-            rewards = rewards.to(dtype=torch.float32, devie=device)
+            rewards = rewards.to(dtype=torch.float32, device=device)
             dones = dones.to(dtype=torch.int32, device=device)
             rtgs = rtgs.to(dtype=torch.float32, device=device)
             timesteps = timesteps.to(dtype=torch.int32, device=device)
@@ -126,7 +125,10 @@ def eval_fn(
             state_target = state_target.reshape(-1, state_dim)[attention_masks.reshape(-1) > 0]
             
             state_loss = torch.sum((state_preds - state_target)**2) / torch.sum(torch.abs(state_preds) > 0)
-
+            
+            if eval_task_type == 'BC':
+                print(f'state: {state_preds.detach().cpu().tolist()} and {state_target.detach().cpu().tolist()}')
+                
             ## 
             action_preds_masks = pred_masks["*"]["action"].unsqueeze(2)
             action_preds = action_preds * action_preds_masks
@@ -137,7 +139,11 @@ def eval_fn(
             action_target = action_target.reshape(-1, act_dim)[attention_masks.reshape(-1) > 0]
             
             action_loss = torch.sum((action_preds - action_target)**2) / torch.sum(torch.abs(action_preds) > 0)
-
+            
+            # if eval_task_type == 'BC':
+            #     print(f'action: {action_preds} and {action_target}')
+            
+            ##
             reward_preds_masks = pred_masks["*"]["reward"].unsqueeze(2)
             reward_preds = reward_preds * reward_preds_masks
             reward_preds = reward_preds.reshape(-1, 1)[attention_masks.reshape(-1) > 0]
@@ -146,8 +152,16 @@ def eval_fn(
             reward_target = reward_target.reshape(-1, 1)[attention_masks.reshape(-1) > 0]
             
             reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(torch.abs(reward_preds) > 0)
+            
+            # if eval_task_type == 'BC':
+            #     print(f'reward: {reward_preds} and {reward_target}')
 
             ##ss
+            if eval_task_type == 'BC':
+                print(f'step {i}: s {state_loss.detach().cpu().item()}, a {action_loss.detach().cpu().item()}, r {reward_loss.detach().cpu().item()}')
+            
+                assert i != 0
+                
             masked_sar_loss = state_loss + action_loss + reward_loss
 
             eval_loss += masked_sar_loss.detach().cpu().item()
@@ -294,13 +308,15 @@ def experiment(
         eval_dataloader = DataLoader(eval_dataset, batch_size=batch_size, 
                 shuffle=True, num_workers=4, drop_last=True, pin_memory=True,) 
         
+        print(f'\n---full {len(full_dataset)}, tr {len(train_dataloader.dataset)}|{len(train_dataloader)}, eval {len(eval_dataloader.dataset)}|{len(eval_dataloader)}---\n')
+        
 
         if log_to_wandb:
             save_path = os.path.join(wandb.run.dir, 'models')
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
             data_info_path = os.path.join(save_path, f'data_info_{env_name}_{env_level}.json')
-            data_info = training_data.data_info
+            data_info = full_dataset.data_info
             data_info['task_embed_size'] = model.cls_token.shape[-1]
             data_info['variant'] = variant
             with open(data_info_path, 'w') as f:
@@ -352,7 +368,8 @@ def experiment(
             elif train_task_type == 'BC':
                 mask_batch_fn = BehaviorCloning(num_seqs=batch_size, seq_len=K, device=device)
             
-            eval_tasks = ['Random', 'BC', 'FD', 'BD']
+            # eval_tasks = ['Random', 'BC', 'FD', 'BD']
+            eval_tasks = ['Random', 'BC']
             eval_fns = [eval_fn(eval_task, eval_dataloader, batch_size,K, device) for eval_task in eval_tasks]
 
             trainer = MaskTrainer(
@@ -405,10 +422,10 @@ def experiment(
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='D4RL', 
+    parser.add_argument('--dataset', type=str, default='CheetahWorld-v2', 
                             choices=['D4RL', 'CheetahWorld-v2']) 
-    parser.add_argument('--env_name', type=str) 
-    parser.add_argument('--env_level', type=str)
+    parser.add_argument('--env_name', type=str) ## cheetah-dir, cheetah-vel
+    parser.add_argument('--env_level', type=str) ## normal, relabel, 'cic', 'rnd', 'icmapt'
     
     parser.add_argument('--train_type', type=str, default='pretrain', 
         choices=['pretrain', 'tSNE'], help='pretrain type: train a BERT model,\
@@ -454,7 +471,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_name', type=str, default='model.pth')
     parser.add_argument('--pooling', type=str, default='cls', choices=['cls', 'mean', 'max', 'mix'])
 
-    parser.add_argument('--root', type=str, default='/data/px/ceyaozhang/MyCodes/data', help='dataset path')
+    parser.add_argument('--root', type=str, default='./data', help='dataset path')
 
     args = parser.parse_args()
 

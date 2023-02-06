@@ -63,6 +63,7 @@ class Distributed_MaskTrainer:
                         wandb.log(logs, step=train_step)
 
                     train_step += 1
+                print(f'-----Finish {epoch} epoch train--------')
 
                 eval_start = time.time()
                 # evaluate models
@@ -73,6 +74,7 @@ class Distributed_MaskTrainer:
                         epoch_logs[f'evaluation/{k}'] = v
                 
                 epoch_logs['time/evaluation'] = time.time() - eval_start
+                print(f'-----Finish {epoch} epoch eval\n--------')
 
             else:
                 for i, data in enumerate(self.train_dataloader):

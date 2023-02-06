@@ -43,7 +43,7 @@ def ddp_setup(rank, world_size):
     # os.environ['CUDA_VISIBLE_DEVICES'] = "1"
     init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
-def prepare_dataloader(dataset: Dataset, batch_size: int):
+def prepare_distributed_dataloader(dataset: Dataset, batch_size: int):
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -51,6 +51,16 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
         pin_memory=True,
         shuffle=False,
         sampler=DistributedSampler(dataset)
+    )
+
+def prepare_dataloader(dataset: Dataset, batch_size: int):
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        drop_last=True,
+        pin_memory=False,
+        shuffle=False,
+        num_workers=0
     )
 
 @torch.no_grad()
@@ -62,7 +72,7 @@ def eval_fn(
         device    
 ):
     def fn(model):
-    
+        print(f'-----\nstart {eval_task_type} eval\n--------')
         if eval_task_type == 'Random':
             mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
         elif eval_task_type == 'BC':
@@ -74,12 +84,13 @@ def eval_fn(
         
         model.eval()
         eval_loss = 0
+        print('start')
+        print(len(eval_dataloader))
         for i, data in enumerate(eval_dataloader):
-
+            print(i)
             features, task_idxs = data
 
-            (states, actions, rewards, dones, \
-                rtgs, timesteps, attention_masks) = features
+            (states, actions, rewards, dones, rtgs, timesteps, attention_masks) = features
             
             task_idxs = task_idxs.to(dtype=torch.int64, device=device)
 
@@ -138,12 +149,15 @@ def eval_fn(
             reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(torch.abs(reward_preds) > 0)
 
             ##ss
-            if eval_task_type == 'BC':
-                print(f'step {i}: s {state_loss.detach().cpu().item()}, a {action_loss.detach().cpu().item()}, r {reward_loss.detach().cpu().item()}')
-            
+            # if eval_task_type == 'BC':
+            print(f'step {i}: s {state_loss.detach().cpu().item()}, a {action_loss.detach().cpu().item()}, r {reward_loss.detach().cpu().item()}')
+                
             masked_sar_loss = state_loss + action_loss + reward_loss
+
             eval_loss += masked_sar_loss.detach().cpu().item()
+            print(eval_loss)
         
+        print('finish')
         return {
             f'{eval_task_type}': eval_loss
         }
@@ -156,6 +170,7 @@ def experiment(
         rank,
         world_size,
         exp_prefix,
+        trajectories,
         variant,
 ):
     ddp_setup(rank, world_size)
@@ -169,8 +184,8 @@ def experiment(
     env_name, env_level = variant['env_name'], variant['env_level']
     model_type = variant['model_type']
     input_type = variant['input_type']
-    train_task_type = variant['train_task_type']
-    group_name = f'{exp_prefix}_{dataset_name}_{env_name}_{env_level}_{model_type}_{input_type}_{train_task_type}'
+    # train_task_type = variant['train_task_type']
+    group_name = f'{exp_prefix}_{dataset_name}_{env_name}_{env_level}_{model_type}_{input_type}'
     if rank == 0:
         print(f'\ngroup_name: {group_name}\n')
     # exp_prefix = f'{group_name}-{random.randint(int(1e5), int(1e6) - 1)}'
@@ -188,24 +203,7 @@ def experiment(
 
     K = variant['K']
     batch_size = variant['batch_size']
-    # num_eval_episodes = variant['num_eval_episodes']
-    
-    # dataset
-    #training_data = CustomDataset(dataset_name, env_name, env_level, 
-    #    trajs=trajectories, max_len=K, eval_traj=eval_traj)
-    
-    # get data
-    # trajectories = get_trajectory_CheetahWorld(, variant['dataset'], variant['env_name'], variant['env_level'], variant['root'])
-    trajectories, _ = get_traj_from_dataset(dataset_name, env_name, env_level, model_type, root)
-    
-
-    full_dataset = CustomDataset(dataset_name, env_name, env_level, trajs=trajectories, max_len=K, eval_traj=eval_traj, normalize=variant['normalize'])
-    train_size = int(0.8 * len(full_dataset))
-    test_size = len(full_dataset) - train_size
-    train_dataset, eval_dataset = torch.utils.data.random_split(full_dataset, [train_size, test_size])
-    
-    train_dataloader = prepare_dataloader(train_dataset, batch_size)
-    eval_dataloader = prepare_dataloader(eval_dataset, batch_size)
+    num_eval_episodes = variant['num_eval_episodes']
 
     if env_name=='all':
         num_task = 62
@@ -273,10 +271,25 @@ def experiment(
     
     # get masked trainer
     mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=rank)
-    # eval_tasks = ['Random', 'BC', 'FD', 'BD']
-    eval_tasks = ['Random', 'BC']
-    eval_fns = [eval_fn(eval_task, eval_dataloader, batch_size, K, rank) for eval_task in eval_tasks]
-
+    if rank == 0:
+        # eval_tasks = ['Random', 'BC', 'FD', 'BD']
+        eval_tasks = ['Random', 'BC']
+        eval_fns = [eval_fn(eval_task, eval_dataloader, batch_size, K, rank) for eval_task in eval_tasks]
+    else:
+        eval_fns = None
+    
+    # get dataset
+    full_dataset = CustomDataset(variant['dataset'], variant['env_name'], variant['env_level'], max_len=variant['K'], normalize=variant['normalize'], trajs=trajectories,  eval_traj=eval_traj)
+    train_size = int(0.8 * len(full_dataset))
+    test_size = len(full_dataset) - train_size
+    train_dataset, eval_dataset = torch.utils.data.random_split(full_dataset, [train_size, test_size])
+    
+    
+    train_dataloader = prepare_distributed_dataloader(train_dataset, batch_size)
+    eval_dataloader = prepare_dataloader(eval_dataset, batch_size)
+    
+    if rank == 0:
+        print(f'---full {len(full_dataset)}, tr {len(train_dataloader.dataset)}|{len(train_dataloader)}, eval {len(eval_dataloader.dataset)}|{len(eval_dataloader)}---')
 
     trainer = Distributed_MaskTrainer(
         variant=variant,
@@ -344,7 +357,7 @@ if __name__ == '__main__':
                             help='input tuples can be sequence type (s,a,r)+time  or concat type cat(s,a,r)') 
     
     parser.add_argument('--world_size', '-ws', type=int, default=8) # use how many gpus to distribute
-    parser.add_argument('--root', type=str, default='/data/px/ceyaozhang/MyCodes/data', help='dataset path')
+    parser.add_argument('--root', type=str, default='./data', help='dataset path')
     
     args = parser.parse_args()
     
@@ -359,5 +372,15 @@ if __name__ == '__main__':
     variant = vars(args)
     for (key, value) in variant.items():
         print(f"{key}: {value}")
+        
+    # get dataset
+    ## If we put this in the experiment fun, then multiprocess will loader the dataset many(# world_size) times
+    #training_data = CustomDataset(dataset_name, env_name, env_level, 
+    #    trajs=trajectories, max_len=K, eval_traj=eval_traj)
+    # trajectories = get_trajectory_CheetahWorld(, variant['dataset'], variant['env_name'], variant['env_level'], variant['root'])
+    # trajectories, _ = get_traj_from_dataset(dataset_name, env_name, env_level, model_type, root)
+    # full_dataset = CustomDataset(dataset_name, env_name, env_level, trajs=trajectories, max_len=K, eval_traj=eval_traj, normalize=variant['normalize'])
+    trajectories, _ = get_traj_from_dataset(variant['dataset'], variant['env_name'], variant['env_level'], variant['model_type'], variant['root'])
     
-    mp.spawn(experiment, args=(world_size, 'gym', variant), nprocs=world_size)
+    
+    mp.spawn(experiment, args=(world_size, 'gym', trajectories, variant), nprocs=world_size)
