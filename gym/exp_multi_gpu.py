@@ -1,4 +1,4 @@
-import gym
+# import gym
 import numpy as np
 import torch
 import wandb
@@ -11,7 +11,7 @@ import sys
 import datetime
 import dateutil.tz
 
-# from decision_transformer.evaluation.evaluate_episodes import evaluate_episode, evaluate_episode_rtg
+from decision_transformer.evaluation.evaluate_episodes import eval_fn, evaluate_episode, evaluate_episode_rtg
 from decision_transformer.models.decision_transformer import DecisionTransformer
 from decision_transformer.models.decision_bert import DecisionBERT ##
 from decision_transformer.models.mlp_bc import MLPBCModel
@@ -62,108 +62,6 @@ def prepare_dataloader(dataset: Dataset, batch_size: int):
         shuffle=False,
         num_workers=0
     )
-
-@torch.no_grad()
-def eval_fn(
-        eval_task_type:str,
-        eval_dataloader,
-        batch_size,
-        K,
-        device    
-):
-    def fn(model):
-        print(f'-----\nstart {eval_task_type} eval\n--------')
-        if eval_task_type == 'Random':
-            mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
-        elif eval_task_type == 'BC':
-            mask_batch_fn = BehaviorCloning(num_seqs=batch_size, seq_len=K, device=device)
-        elif eval_task_type == 'FD':
-            mask_batch_fn = ForwardDynamics(num_seqs=batch_size, seq_len=K, device=device, rtg_masking_type='BC')
-        elif eval_task_type == 'BD':
-            mask_batch_fn = BackwardsDynamics(num_seqs=batch_size, seq_len=K, device=device, rtg_masking_type='BC')
-        
-        model.eval()
-        eval_loss = 0
-        print('start')
-        print(len(eval_dataloader))
-        for i, data in enumerate(eval_dataloader):
-            print(i)
-            features, task_idxs = data
-
-            (states, actions, rewards, dones, rtgs, timesteps, attention_masks) = features
-            
-            task_idxs = task_idxs.to(dtype=torch.int64, device=device)
-
-            states = states.to(dtype=torch.float32, device=device)
-            actions = actions.to(dtype=torch.float32, device=device)
-            rewards = rewards.to(dtype=torch.float32, device=device)
-            dones = dones.to(dtype=torch.int32, device=device)
-            rtgs = rtgs.to(dtype=torch.float32, device=device)
-            timesteps = timesteps.to(dtype=torch.int32, device=device)
-            attention_masks = attention_masks.to(dtype=torch.int32, device=device)
-
-            input_masks = mask_batch_fn.input_masks
-            state_inputs = states * input_masks["*"]["state"].unsqueeze(2) ## make input_masks from (B,L) to (B, L, 1) and will broadcast to states
-            action_inputs = actions * input_masks["*"]["action"].unsqueeze(2)
-            # reward_inputs = rtg[:,:-1] * input_masks["*"]["rtg"].unsqueeze(2)
-            reward_inputs = rewards * input_masks["*"]["reward"].unsqueeze(2)
-
-            assert state_inputs.shape[0] == rtgs.shape[0], 'please use the same length'
-            (state_preds, action_preds, reward_preds), (outputs, cls_output) = model(
-                state_inputs, action_inputs, reward_inputs, rtgs, timesteps, attention_masks,
-                return_outputs=True
-            )
-
-            pred_masks = mask_batch_fn.get_prediction_masks()
-
-            ## 
-            state_preds_masks = pred_masks["*"]["state"].unsqueeze(2)
-            state_preds = state_preds * state_preds_masks
-            state_dim = state_preds.shape[2]
-            ## concat the batch and length (B*L, D)
-            state_preds = state_preds.reshape(-1, state_dim)[attention_masks.reshape(-1) > 0] 
-            
-            state_target = torch.clone(states * state_preds_masks)
-            state_target = state_target.reshape(-1, state_dim)[attention_masks.reshape(-1) > 0]
-            
-            state_loss = torch.sum((state_preds - state_target)**2) / torch.sum(torch.abs(state_preds) > 0)
-
-            ## 
-            action_preds_masks = pred_masks["*"]["action"].unsqueeze(2)
-            action_preds = action_preds * action_preds_masks
-            act_dim = action_preds.shape[2]
-            action_preds = action_preds.reshape(-1, act_dim)[attention_masks.reshape(-1) > 0]
-            
-            action_target = torch.clone(actions * action_preds_masks)
-            action_target = action_target.reshape(-1, act_dim)[attention_masks.reshape(-1) > 0]
-            
-            action_loss = torch.sum((action_preds - action_target)**2) / torch.sum(torch.abs(action_preds) > 0)
-
-            reward_preds_masks = pred_masks["*"]["reward"].unsqueeze(2)
-            reward_preds = reward_preds * reward_preds_masks
-            reward_preds = reward_preds.reshape(-1, 1)[attention_masks.reshape(-1) > 0]
-            
-            reward_target = torch.clone(rewards * reward_preds_masks)
-            reward_target = reward_target.reshape(-1, 1)[attention_masks.reshape(-1) > 0]
-            
-            reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(torch.abs(reward_preds) > 0)
-
-            ##ss
-            # if eval_task_type == 'BC':
-            print(f'step {i}: s {state_loss.detach().cpu().item()}, a {action_loss.detach().cpu().item()}, r {reward_loss.detach().cpu().item()}')
-                
-            masked_sar_loss = state_loss + action_loss + reward_loss
-
-            eval_loss += masked_sar_loss.detach().cpu().item()
-            print(eval_loss)
-        
-        print('finish')
-        return {
-            f'{eval_task_type}': eval_loss
-        }
-    
-
-    return fn
 
 
 def experiment(
@@ -268,22 +166,12 @@ def experiment(
         optimizer,
         lambda steps: min((steps+1)/warmup_steps, 1)
     )
-    
-    # get masked trainer
-    mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=rank)
-    if rank == 0:
-        # eval_tasks = ['Random', 'BC', 'FD', 'BD']
-        eval_tasks = ['Random', 'BC']
-        eval_fns = [eval_fn(eval_task, eval_dataloader, batch_size, K, rank) for eval_task in eval_tasks]
-    else:
-        eval_fns = None
-    
+
     # get dataset
     full_dataset = CustomDataset(variant['dataset'], variant['env_name'], variant['env_level'], max_len=variant['K'], normalize=variant['normalize'], trajs=trajectories,  eval_traj=eval_traj)
     train_size = int(0.8 * len(full_dataset))
     test_size = len(full_dataset) - train_size
     train_dataset, eval_dataset = torch.utils.data.random_split(full_dataset, [train_size, test_size])
-    
     
     train_dataloader = prepare_distributed_dataloader(train_dataset, batch_size)
     eval_dataloader = prepare_dataloader(eval_dataset, batch_size)
@@ -291,6 +179,16 @@ def experiment(
     if rank == 0:
         print(f'---full {len(full_dataset)}, tr {len(train_dataloader.dataset)}|{len(train_dataloader)}, eval {len(eval_dataloader.dataset)}|{len(eval_dataloader)}---')
 
+
+    # get masked trainer
+    mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=rank)
+    if rank == 0:
+        eval_tasks = ['Random', 'BC', 'FD', 'BD']
+        # eval_tasks = ['Random', 'BC']
+        eval_fns = [eval_fn(eval_task, eval_dataloader, batch_size, K, rank) for eval_task in eval_tasks]
+    else:
+        eval_fns = None
+    
     trainer = Distributed_MaskTrainer(
         variant=variant,
         model=model,
@@ -335,6 +233,7 @@ if __name__ == '__main__':
                             choices=['D4RL', 'CheetahWorld-v2']) 
     parser.add_argument('--env_name', type=str, default='all') 
     parser.add_argument('--env_level', type=str, default='all')
+
     parser.add_argument('--mode', type=str, default='normal')  # normal for standard setting, delayed for sparse
     parser.add_argument('--K', type=int, default=200)
     parser.add_argument('--pct_traj', type=float, default=1.)
@@ -348,6 +247,7 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', '-lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', '-wd', type=float, default=1e-4)
     parser.add_argument('--warmup_epochs', type=int, default=5)
+
     parser.add_argument('--num_eval_episodes', type=int, default=100)
     parser.add_argument('--epoch', type=int, default=80)
     parser.add_argument('--save_epoch', type=int, default=20)

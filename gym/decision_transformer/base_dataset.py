@@ -1,7 +1,7 @@
 from torch.utils.data import Dataset
 import numpy as np
 
-import gym
+# import gym
 
 import os 
 import os.path as osp
@@ -142,7 +142,7 @@ def get_traj_from_dataset(dataset_name, env_name, env_level, model_type, root='.
                         ## trajectories is a list containing 1K path.
                         ## Each path is a dict containing (o,a,r,no,d) with 1K steps
                         _trajs = pickle.load(f)
-                        # _ = eval_traj(env_name, env_level, _trajs, idx_name)
+                        _ = eval_traj(env_name, env_level, _trajs, idx_name) ## why need this, just add idx_name into trajs
                     
                         trajectories.extend(_trajs) ## do not use list.append()
                         

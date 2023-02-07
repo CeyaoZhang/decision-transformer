@@ -140,6 +140,115 @@ def evaluate_episode_rtg(
     return episode_return, episode_length
 
 
+from decision_transformer.training.batches import RandomPred, BehaviorCloning, ForwardDynamics, BackwardsDynamics
 
+@torch.no_grad()
+def eval_fn(
+        eval_task_type:str,
+        eval_dataloader,
+        batch_size:int,
+        K:int,
+        device:str
+        
+):
+    def fn(model):
+    
+        if eval_task_type == 'Random':
+            mask_batch_fn = RandomPred(num_seqs=batch_size, seq_len=K, device=device)
+        elif eval_task_type == 'BC':
+            mask_batch_fn = BehaviorCloning(num_seqs=batch_size, seq_len=K, device=device)
+        elif eval_task_type == 'FD':
+            mask_batch_fn = ForwardDynamics(num_seqs=batch_size, seq_len=K, device=device, rtg_masking_type='BC')
+        elif eval_task_type == 'BD':
+            mask_batch_fn = BackwardsDynamics(num_seqs=batch_size, seq_len=K, device=device, rtg_masking_type='BC')
+        
+        model.eval()
+        eval_loss = 0
+        for i, data in enumerate(eval_dataloader):
+
+            features, task_idxs = data
+
+            (states, actions, rewards, dones, rtgs, timesteps, attention_masks) = features
+            
+            task_idxs = task_idxs.to(dtype=torch.int64, device=device)
+
+            states = states.to(dtype=torch.float32, device=device)
+            actions= actions.to(dtype=torch.float32, device=device)
+            rewards = rewards.to(dtype=torch.float32, device=device)
+            dones = dones.to(dtype=torch.int32, device=device)
+            rtgs = rtgs.to(dtype=torch.float32, device=device)
+            timesteps = timesteps.to(dtype=torch.int32, device=device)
+            attention_masks = attention_masks.to(dtype=torch.int32, device=device)
+
+            input_masks = mask_batch_fn.input_masks
+            state_inputs = states * input_masks["*"]["state"].unsqueeze(2) ## make input_masks from (B,L) to (B, L, 1) and will broadcast to states
+            action_inputs = actions * input_masks["*"]["action"].unsqueeze(2)
+            # reward_inputs = rtg[:,:-1] * input_masks["*"]["rtg"].unsqueeze(2)
+            reward_inputs = rewards * input_masks["*"]["reward"].unsqueeze(2)
+
+            assert state_inputs.shape[0] == rtgs.shape[0], 'please use the same length'
+            (state_preds, action_preds, reward_preds), (outputs, cls_output) = model(
+                state_inputs, action_inputs, reward_inputs, rtgs, timesteps, attention_masks,
+                return_outputs=True
+            )
+
+            pred_masks = mask_batch_fn.get_prediction_masks()
+
+            ## 
+            state_preds_masks = pred_masks["*"]["state"].unsqueeze(2)
+            state_preds = state_preds * state_preds_masks
+            state_dim = state_preds.shape[2]
+            ## concat the batch and length (B*L, D)
+            state_preds = state_preds.reshape(-1, state_dim)[attention_masks.reshape(-1) > 0] 
+            
+            state_target = torch.clone(states * state_preds_masks)
+            state_target = state_target.reshape(-1, state_dim)[attention_masks.reshape(-1) > 0]
+            
+            state_loss = torch.sum((state_preds - state_target)**2) / torch.sum(torch.abs(state_preds) > 0)
+            
+            # print(f'state: {state_preds.detach().cpu().tolist()}')
+                
+            ## 
+            action_preds_masks = pred_masks["*"]["action"].unsqueeze(2)
+            action_preds = action_preds * action_preds_masks
+            act_dim = action_preds.shape[2]
+            action_preds = action_preds.reshape(-1, act_dim)[attention_masks.reshape(-1) > 0]
+            
+            action_target = torch.clone(actions * action_preds_masks)
+            action_target = action_target.reshape(-1, act_dim)[attention_masks.reshape(-1) > 0]
+            
+            action_loss = torch.sum((action_preds - action_target)**2) / torch.sum(torch.abs(action_preds) > 0)
+            
+            # print(f'action: {action_preds} and {action_target}')
+            
+            ##
+            reward_preds_masks = pred_masks["*"]["reward"].unsqueeze(2)
+            reward_preds = reward_preds * reward_preds_masks
+            reward_preds = reward_preds.reshape(-1, 1)[attention_masks.reshape(-1) > 0]
+            
+            reward_target = torch.clone(rewards * reward_preds_masks)
+            reward_target = reward_target.reshape(-1, 1)[attention_masks.reshape(-1) > 0]
+            
+            reward_loss = torch.sum((reward_preds - reward_target)**2) / torch.sum(torch.abs(reward_preds) > 0)
+            
+            # print(f'reward: {reward_preds} and {reward_target}')
+
+            ##ss
+            # print(f'step {i}: s {state_loss.detach().cpu().item()}, a {action_loss.detach().cpu().item()}, r {reward_loss.detach().cpu().item()}')
+            
+            #     assert i != 0
+            
+            if eval_task_type == 'Random':
+                masked_sar_loss = state_loss + action_loss + reward_loss
+            elif eval_task_type == 'BC':
+                masked_sar_loss = action_loss
+            elif eval_task_type == 'FD' or eval_task_type == 'BD':
+                masked_sar_loss = state_loss
+
+            eval_loss += masked_sar_loss.detach().cpu().item()
+        
+        return {f'{eval_task_type}': eval_loss}
+    
+    return fn
         
 

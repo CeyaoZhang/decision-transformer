@@ -43,7 +43,7 @@ class MaskTrainer(Trainer):
     
     def train_iteration(self):
 
-        for epoch in tqdm(range(self.variant['epoch'])):
+        for epoch in range(self.variant['epoch']):
             
             train_losses = [] ## the loss in one iteration
             train_corrects = []
@@ -51,11 +51,12 @@ class MaskTrainer(Trainer):
 
             train_start = time.time()
             self.model.train()
-            for i, data in enumerate(self.train_dataloader):
+            for i, data in enumerate(tqdm(self.train_dataloader)):
 
                 train_loss, correct  = self.train_step(data) ## the loss in train one batch
                 train_losses.append(train_loss)
                 train_corrects.append(correct)
+            print(f'-----Finish {epoch} epoch train--------')
             
             if self.scheduler is not None:
                 self.scheduler.step()
@@ -72,6 +73,7 @@ class MaskTrainer(Trainer):
                 outputs = eval_fn(self.model)
                 for k, v in outputs.items():
                     epoch_logs[f'evaluation/{k}'] = v
+            print(f'-----Finish {epoch} epoch eval--------\n')
 
             epoch_logs['time/total'] = time.time() - self.start_time
             epoch_logs['time/evaluation'] = time.time() - eval_start
@@ -80,7 +82,7 @@ class MaskTrainer(Trainer):
             acc = np.sum(train_corrects)/self.size 
             epoch_logs['training/train_acc'] = acc
 
-            print(f'{epoch}: cost {epoch_time:.3f}s and acc {acc:.2f}')
+            print(f'{epoch}: cost {epoch_time:.3f}s and acc {acc:.2f}\n')
 
             for k in self.diagnostics:
                 epoch_logs[k] = self.diagnostics[k]
@@ -89,10 +91,15 @@ class MaskTrainer(Trainer):
             if self.log_to_wandb:
                 wandb.log(epoch_logs)
 
+            
+            print(f'Iteration {epoch}')
+            for k, v in epoch_logs.items():
+                print(f'{k}: {v}')
+            print('=' * 80)
+                    
             # save the model params
             if (epoch+1) % self.variant['save_epoch'] == 0:
                 self.save_checkpoint()
-                print('=' * 80)
                 print(f'save {epoch+1} model')
 
     def train_step(self, data):

@@ -53,6 +53,7 @@ class Distributed_MaskTrainer:
 
             if self.gpu_id == 0:
                 for i, data in enumerate(tqdm(self.train_dataloader)):
+                    # print(f'-----start {i} step train--------')
                     self.train_step(data) ## the loss in one step
                     train_losses.append(self.diagnostics['training/total_error'])
 
@@ -64,7 +65,7 @@ class Distributed_MaskTrainer:
 
                     train_step += 1
                 print(f'-----Finish {epoch} epoch train--------')
-
+                    
                 eval_start = time.time()
                 # evaluate models
                 self.model.eval()
@@ -75,7 +76,7 @@ class Distributed_MaskTrainer:
                 
                 epoch_logs['time/evaluation'] = time.time() - eval_start
                 print(f'-----Finish {epoch} epoch eval\n--------')
-
+                
             else:
                 for i, data in enumerate(self.train_dataloader):
                     self.train_step(data) ## the loss in one step

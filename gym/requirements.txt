@@ -1,0 +1,4 @@
+wandb ## pip install wandb -i http://pypi.douban.com/simple --trusted-host pypi.douban.com
+transformers==4.5.1 ## pip install transformers[torch]
+tsnecuda ## conda install tsnecuda -c conda-forge
+torch>1.9.1 
